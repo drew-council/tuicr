@@ -351,6 +351,9 @@ These are non-obvious things the implementation chain hit. Worth preserving for 
 
 21. **`e` in PR mode must not resolve against the working tree.** PR review installs `PrNoopVcs`, so there is no local VCS to ask, and `vcs_info.root_path` is the synthetic `forge:host/owner/repo` identity — the checkout can be on any branch, or absent. Editor targets go through `App::pr_editor_target`, which reads the reviewed revision (local blob via `forge::local_git::read_blob`, else `ForgeBackend::fetch_file_content`) and only hands over the worktree file when its content matches. Related: `fetch_file_lines` runs content through `slice_context_lines`, which expands tabs, so it is never byte-faithful — anything that writes content back to disk must use `fetch_file_content`.
 
+22. **GitHub refuses to render diffs past 300 files.** `gh pr diff` fails with HTTP 406 "diff exceeded the maximum number of files (300)", so the patch half of `get_pull_request_diff` caps out long before the metadata half does (`pull_request_file_metadata` paginates to 3000). It therefore tries local git first: when a matching local checkout contains both `baseRefOid` and `headRefOid`, it runs three-dot `git diff base...head` (GitHub renders PR diffs from the merge base, so three-dot — not two-dot — matches). When the fast path can't run and GitHub 406s, the error is annotated with the `git fetch origin <base> pull/<N>/head` hint. GitLab needs none of this: its `get_pull_request_diff` reads the paginated `/diffs` endpoint, which has no comparable cap.
+
+
 ### Keeping Docs Updated
 
 When adding user-facing features, update the relevant documentation:

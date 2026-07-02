@@ -26,29 +26,35 @@ use super::submit::build_review_payload;
 use crate::forge::traits::CreateReviewRequest;
 
 const DEFAULT_GITHUB_HOST: &str = "github.com";
+
 const PR_LIST_JSON_FIELDS: &str =
     "number,title,author,headRefName,baseRefName,updatedAt,url,state,isDraft";
+
 const PR_VIEW_JSON_FIELDS: &str = concat!(
     "number,title,url,state,isDraft,author,headRefName,baseRefName,",
     "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt"
 );
+
 const PR_INFO_JSON_FIELDS: &str = concat!(
     "number,title,url,state,isDraft,author,headRefName,baseRefName,",
     "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,",
     "reviewDecision,mergeable,mergeStateStatus,reviewRequests,latestReviews,",
     "statusCheckRollup,comments"
 );
+
 const PR_INFO_JSON_FIELDS_WITHOUT_CHECKS: &str = concat!(
     "number,title,url,state,isDraft,author,headRefName,baseRefName,",
     "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,",
     "reviewDecision,mergeable,mergeStateStatus,reviewRequests,latestReviews,comments"
 );
+
 const PR_INFO_JSON_FIELDS_WITHOUT_COMMENTS: &str = concat!(
     "number,title,url,state,isDraft,author,headRefName,baseRefName,",
     "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,",
     "reviewDecision,mergeable,mergeStateStatus,reviewRequests,latestReviews,",
     "statusCheckRollup"
 );
+
 const PR_INFO_JSON_FIELDS_WITHOUT_CHECKS_OR_COMMENTS: &str = concat!(
     "number,title,url,state,isDraft,author,headRefName,baseRefName,",
     "headRefOid,baseRefOid,body,updatedAt,closed,mergedAt,",
@@ -108,12 +114,15 @@ impl From<CommandOutputError> for GhCommandError {
     }
 }
 
-/// Return `Some(diff)` when both `start_sha` and `end_sha` are present in
-/// the local checkout at `repo_root`, by running `git diff <start>..<end>`.
-/// Returns `None` when the checkout is missing either SHA or the command
-/// fails — callers fall back to the forge in that case.
-fn local_range_diff(repo_root: &Path, start_sha: &str, end_sha: &str) -> Option<Vec<FilePatch>> {
-    for sha in [start_sha, end_sha] {
+/// Run `git diff <range>` in the checkout at `repo_root`, provided every
+/// SHA in `shas` is present locally. Returns `None` when the checkout is
+/// missing a SHA or the command fails — callers fall back to the forge in
+/// that case.
+fn local_git_diff(repo_root: &Path, shas: [&str; 2], range: &str) -> Option<Vec<FilePatch>> {
+    for sha in shas {
+        if sha.is_empty() {
+            return None;
+        }
         let exists = run_command_output(
             "git",
             Some(repo_root),
@@ -123,8 +132,27 @@ fn local_range_diff(repo_root: &Path, start_sha: &str, end_sha: &str) -> Option<
             return None;
         }
     }
+    run_git_diff(repo_root, &[range]).ok()
+}
+
+/// Return `Some(diff)` when both `start_sha` and `end_sha` are present in
+/// the local checkout at `repo_root`, by running `git diff <start>..<end>`.
+fn local_range_diff(repo_root: &Path, start_sha: &str, end_sha: &str) -> Option<Vec<FilePatch>> {
     let range = format!("{start_sha}..{end_sha}");
-    run_git_diff(repo_root, &[range.as_str()]).ok()
+    local_git_diff(repo_root, [start_sha, end_sha], &range)
+}
+
+/// Cumulative PR diff from a local checkout. GitHub renders a PR's diff
+/// from the merge base of base and head, which is exactly what three-dot
+/// `git diff <base>...<head>` computes — `base_sha` here is `baseRefOid`
+/// (the base branch tip), not the merge base itself.
+fn local_merge_base_diff(
+    repo_root: &Path,
+    base_sha: &str,
+    head_sha: &str,
+) -> Option<Vec<FilePatch>> {
+    let range = format!("{base_sha}...{head_sha}");
+    local_git_diff(repo_root, [base_sha, head_sha], &range)
 }
 
 #[derive(Debug, Clone)]
@@ -310,6 +338,18 @@ where
     }
 
     fn get_pull_request_diff(&self, pr: &PullRequestDetails) -> Result<Vec<FilePatch>> {
+        // Fast path: when both endpoint SHAs live in the local checkout,
+        // compute the cumulative diff with local git. Same SHAs produce
+        // equivalent output to what GitHub serves, and — unlike the API —
+        // local git has no 300-file diff cap, so this is also the only way
+        // to open very large PRs (`gh pr diff` fails with HTTP 406 past
+        // that limit).
+        if let Some(root) = self.local_checkout.as_deref()
+            && let Some(diff) = local_merge_base_diff(root, &pr.base_sha, &pr.head_sha)
+        {
+            return Ok(diff);
+        }
+
         // We want the *cumulative* diff between base and head for the PR.
         // `gh pr diff --patch` returns mbox-style `git format-patch` output
         // — one patch per commit — so a 7-commit PR yields 7 separate
@@ -318,18 +358,20 @@ where
         // returns the single cumulative diff. Hard-won lesson; see the
         // duplicate-files-in-list bug.
         let metadata = self.pull_request_file_metadata(pr)?;
-        let patch = self.run_gh(
-            vec![
-                "pr".to_string(),
-                "diff".to_string(),
-                pr.number.to_string(),
-                "--repo".to_string(),
-                gh_repo_arg(&pr.repository),
-                "--color".to_string(),
-                "never".to_string(),
-            ],
-            &pr.repository.host,
-        )?;
+        let patch = self
+            .run_gh(
+                vec![
+                    "pr".to_string(),
+                    "diff".to_string(),
+                    pr.number.to_string(),
+                    "--repo".to_string(),
+                    gh_repo_arg(&pr.repository),
+                    "--color".to_string(),
+                    "never".to_string(),
+                ],
+                &pr.repository.host,
+            )
+            .map_err(|err| annotate_diff_too_large_error(err, pr))?;
         pair_metadata_with_patch(metadata, patch.as_bytes())
     }
 
@@ -896,6 +938,29 @@ fn gh_repo_arg(repository: &ForgeRepository) -> String {
     }
 }
 
+/// GitHub refuses to render diffs past 300 files (HTTP 406, "diff exceeded
+/// the maximum number of files"). When that's what killed `gh pr diff`,
+/// tell the user about the local-checkout fast path instead of leaving
+/// them with a dead end.
+fn annotate_diff_too_large_error(err: TuicrError, pr: &PullRequestDetails) -> TuicrError {
+    let message = err.to_string();
+    let lower = message.to_ascii_lowercase();
+    if !(lower.contains("exceeded the maximum number of files") || lower.contains("too_large")) {
+        return err;
+    }
+    TuicrError::Forge(format!(
+        "{message}\n\nThis PR is larger than GitHub's 300-file diff API limit. \
+         tuicr can compute the diff locally instead: run it from a checkout of \
+         {owner}/{name} with both ends of the PR fetched, e.g.\n\
+         \x20 git fetch origin {base_ref} pull/{number}/head\n\
+         then re-run `tuicr pr {number}`.",
+        owner = pr.repository.owner,
+        name = pr.repository.name,
+        base_ref = pr.base_ref_name,
+        number = pr.number,
+    ))
+}
+
 fn map_gh_error(error: GhCommandError, host: &str) -> TuicrError {
     match error {
         GhCommandError::MissingGh => TuicrError::Forge(
@@ -1099,6 +1164,9 @@ index 1111111..2222222 100644
         /// When set, `run_with_stdin` returns this body as the success output.
         /// Defaults to `CREATE_REVIEW_RESPONSE_JSON` when None.
         stdin_response: RefCell<Option<String>>,
+        /// When set, `gh pr diff` returns this error instead of `PR_PATCH`.
+        /// Lets tests exercise the too-large-diff error path.
+        pr_diff_error: RefCell<Option<GhCommandError>>,
     }
 
     impl GhCommandRunner for FakeGhRunner {
@@ -1109,7 +1177,10 @@ index 1111111..2222222 100644
                 Some("pr") => match args.get(1).map(String::as_str) {
                     Some("list") => Ok(PR_LIST_JSON.to_string()),
                     Some("view") => Ok(PR_VIEW_JSON.to_string()),
-                    Some("diff") => Ok(PR_PATCH.to_string()),
+                    Some("diff") => match self.pr_diff_error.borrow_mut().take() {
+                        Some(err) => Err(err),
+                        None => Ok(PR_PATCH.to_string()),
+                    },
                     _ => Err(GhCommandError::Failed {
                         status: Some(1),
                         stderr: "unexpected pr command".to_string(),
@@ -1815,6 +1886,145 @@ Match host github-work
             !diff_call.iter().any(|a| a == "--patch"),
             "`gh pr diff` must NOT pass --patch (mbox output duplicates files); got {diff_call:?}"
         );
+    }
+
+    /// Init a git repo in `dir` with two commits touching `greeting.txt`;
+    /// returns (base_sha, head_sha).
+    fn init_repo_with_two_commits(dir: &Path) -> (String, String) {
+        fn git(dir: &Path, args: &[&str]) -> String {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args([
+                    "-c",
+                    "user.name=tuicr-test",
+                    "-c",
+                    "user.email=tuicr@test.invalid",
+                    // Overrides any global signing config, which would
+                    // otherwise make these commits depend on a live agent.
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .output()
+                .expect("git spawns");
+            assert!(
+                output.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        }
+        git(dir, &["init", "--quiet"]);
+        std::fs::write(dir.join("greeting.txt"), "hello\n").unwrap();
+        git(dir, &["add", "greeting.txt"]);
+        git(dir, &["commit", "--quiet", "-m", "base"]);
+        let base_sha = git(dir, &["rev-parse", "HEAD"]);
+        std::fs::write(dir.join("greeting.txt"), "hello world\n").unwrap();
+        git(dir, &["commit", "--quiet", "-am", "head"]);
+        let head_sha = git(dir, &["rev-parse", "HEAD"]);
+        (base_sha, head_sha)
+    }
+
+    #[test]
+    fn should_compute_pr_diff_locally_when_checkout_has_both_shas() {
+        // given — a checkout containing both the PR base and head SHAs
+        let checkout = tempfile::tempdir().unwrap();
+        let (base_sha, head_sha) = init_repo_with_two_commits(checkout.path());
+        let runner = FakeGhRunner::default();
+        let mut backend = GitHubGhBackend::with_runner(Some(repo()), runner);
+        backend.set_local_checkout(Some(checkout.path().to_path_buf()));
+        let mut details = backend
+            .get_pull_request(parse_pull_request_target("125").unwrap())
+            .unwrap();
+        details.base_sha = base_sha;
+        details.head_sha = head_sha;
+
+        // when
+        let diff = backend.get_pull_request_diff(&details).unwrap();
+
+        // then — local git produced the diff (GitHub's 300-file cap never
+        // applies), and `gh pr diff` was never invoked.
+        assert!(
+            diff.iter().any(|f| f.patch.contains("+hello world")),
+            "unexpected diff: {diff:?}"
+        );
+        let calls = backend.runner.calls.borrow();
+        assert!(
+            !calls.iter().any(|args| {
+                args.first().map(String::as_str) == Some("pr")
+                    && args.get(1).map(String::as_str) == Some("diff")
+            }),
+            "local fast path must not call `gh pr diff`; got {calls:?}"
+        );
+    }
+
+    #[test]
+    fn should_fall_back_to_gh_pr_diff_when_local_shas_missing() {
+        // given — a checkout that does NOT contain the PR SHAs
+        let checkout = tempfile::tempdir().unwrap();
+        init_repo_with_two_commits(checkout.path());
+        let runner = FakeGhRunner::default();
+        let mut backend = GitHubGhBackend::with_runner(Some(repo()), runner);
+        backend.set_local_checkout(Some(checkout.path().to_path_buf()));
+        let details = backend
+            .get_pull_request(parse_pull_request_target("125").unwrap())
+            .unwrap();
+
+        // when — details carry the fixture SHAs, absent from the checkout
+        let diff = backend.get_pull_request_diff(&details).unwrap();
+
+        // then — silently fell back to the forge
+        assert_eq!(diff.len(), 1);
+        assert_eq!(diff[0].patch, PR_PATCH.trim_start());
+    }
+
+    #[test]
+    fn should_hint_local_checkout_when_pr_diff_exceeds_file_limit() {
+        // given — gh fails the way it does on >300-file PRs (HTTP 406)
+        let runner = FakeGhRunner::default();
+        runner.pr_diff_error.replace(Some(GhCommandError::Failed {
+            status: Some(1),
+            stderr: "could not find pull request diff: HTTP 406: Sorry, the diff \
+                     exceeded the maximum number of files (300)."
+                .to_string(),
+        }));
+        let backend = GitHubGhBackend::with_runner(Some(repo()), runner);
+        let details = backend
+            .get_pull_request(parse_pull_request_target("125").unwrap())
+            .unwrap();
+
+        // when
+        let err = backend.get_pull_request_diff(&details).unwrap_err();
+
+        // then — the original error survives and the local-checkout hint
+        // tells the user how to fetch both ends of the PR.
+        let message = err.to_string();
+        assert!(message.contains("exceeded the maximum number of files"));
+        assert!(
+            message.contains("git fetch origin main pull/125/head"),
+            "expected fetch hint, got: {message}"
+        );
+    }
+
+    #[test]
+    fn should_not_annotate_unrelated_pr_diff_errors() {
+        let runner = FakeGhRunner::default();
+        runner.pr_diff_error.replace(Some(GhCommandError::Failed {
+            status: Some(1),
+            stderr: "HTTP 500: something else".to_string(),
+        }));
+        let backend = GitHubGhBackend::with_runner(Some(repo()), runner);
+        let details = backend
+            .get_pull_request(parse_pull_request_target("125").unwrap())
+            .unwrap();
+
+        let message = backend
+            .get_pull_request_diff(&details)
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("HTTP 500"));
+        assert!(!message.contains("git fetch origin"));
     }
 
     #[test]
