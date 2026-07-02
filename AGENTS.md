@@ -361,6 +361,9 @@ These are non-obvious things the implementation chain hit. Worth preserving for 
 
 23. **`fetch_pr_data` fans out once the PR metadata is in.** `get_pull_request_info` and `resolve_diff_base_sha` run first, then `get_pull_request_diff`, `list_pull_request_commits`, and `list_pull_request_review_metadata` run concurrently through `forge::join` (scoped threads), so opening a PR waits for the slowest of them rather than their sum. The backend must therefore be `Sync` (`create_forge_backend` returns `Box<dyn ForgeBackend + Sync>`), and test fakes record calls through `Mutex` or atomics, not `RefCell` or `Cell`. Each call still paginates sequentially, and errors keep the sequential precedence: a diff error fails the open, while commit and review-metadata failures degrade to empty. GitHub's `get_pull_request_diff` fetches `pulls/N/files` and `gh pr diff` the same way, and a file-list error wins over a patch error.
 
+24. **GitHub refuses to render diffs past 300 files.** `gh pr diff` fails with HTTP 406 "diff exceeded the maximum number of files (300)", so the patch half of `get_pull_request_diff` caps out long before the metadata half does (`pull_request_file_metadata` paginates to 3000). It therefore tries local git first: when a matching local checkout contains both `base_sha` and `head_sha`, it runs three-dot `git diff base...head` (GitHub renders PR diffs from the merge base, so three-dot — not two-dot — matches). When the fast path can't run and GitHub 406s, the error is annotated with the `git fetch origin <base> pull/<N>/head` hint. GitLab needs none of this: its `get_pull_request_diff` reads the paginated `/diffs` endpoint, which has no comparable cap.
+
+
 ### Keeping Docs Updated
 
 When adding user-facing features, update the relevant documentation:
