@@ -22,9 +22,9 @@ fn fixture() -> Vec<AnnotatedLine> {
 }
 
 #[test]
-fn forward_skips_spacing_and_header_to_next_content_line() {
+fn forward_skips_spacing_to_next_navigable_line() {
     let annotations = fixture();
-    assert_eq!(skip_decoration_forward(&annotations, 2, 4), 4);
+    assert_eq!(skip_decoration_forward(&annotations, 2, 4), 3);
 }
 
 #[test]
@@ -44,9 +44,15 @@ fn forward_clamps_at_max_line_even_on_decoration() {
 }
 
 #[test]
-fn backward_skips_header_and_spacing_to_previous_content_line() {
+fn backward_keeps_position_on_file_header() {
     let annotations = fixture();
-    assert_eq!(skip_decoration_backward(&annotations, 3), 1);
+    assert_eq!(skip_decoration_backward(&annotations, 3), 3);
+}
+
+#[test]
+fn backward_skips_spacing_to_previous_navigable_line() {
+    let annotations = fixture();
+    assert_eq!(skip_decoration_backward(&annotations, 2), 1);
 }
 
 #[test]

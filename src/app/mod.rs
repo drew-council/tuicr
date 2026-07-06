@@ -30,10 +30,15 @@ use crate::vcs::{
 };
 
 const VISIBLE_COMMIT_COUNT: usize = 10;
+
 const COMMIT_PAGE_SIZE: usize = 10;
+
 pub const DEFAULT_REVIEW_WATCH_INTERVAL_MS: u64 = 1000;
+
 pub const STAGED_SELECTION_ID: &str = "__tuicr_staged__";
+
 pub const UNSTAGED_SELECTION_ID: &str = "__tuicr_unstaged__";
+
 pub const GAP_EXPAND_BATCH: usize = 20;
 
 /// Create a forge backend for the given repository.
@@ -558,19 +563,22 @@ pub fn find_source_line(
     }
 }
 
-/// True for rendered lines the cursor should never rest on — spacing between
-/// files and file header rows.
+/// True for rendered lines the cursor should never rest on.
+///
+/// File headers are intentionally navigable: reviewed files collapse to a
+/// header-only row, and mouse hover/click can place the cursor there. Treating
+/// those rows as decorations makes page motions skip across large runs of
+/// collapsed files instead of moving a predictable distance. The reviewed
+/// banner, unlike the file header, is display-only and remains non-navigable.
 fn is_decoration(annotation: &AnnotatedLine) -> bool {
     matches!(
         annotation,
-        AnnotatedLine::Spacing
-            | AnnotatedLine::FileHeader { .. }
-            | AnnotatedLine::ReviewedBanner { .. }
+        AnnotatedLine::Spacing | AnnotatedLine::ReviewedBanner { .. }
     )
 }
 
 /// Walk `start` forward (capped at `max_line`) to the nearest non-decoration
-/// annotation so scroll and jump motions land on actionable content.
+/// annotation so scroll and jump motions avoid blank separator rows.
 fn skip_decoration_forward(annotations: &[AnnotatedLine], start: usize, max_line: usize) -> usize {
     let mut line = start;
     while line < max_line && annotations.get(line).is_some_and(is_decoration) {
@@ -1051,6 +1059,7 @@ pub struct Message {
 }
 
 const MESSAGE_TTL_INFO: Duration = Duration::from_secs(3);
+
 const MESSAGE_TTL_WARNING: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1861,24 +1870,43 @@ impl AppStartupOptions<'_> {
 }
 
 mod annotations;
+
 mod comment_vim;
+
 mod comments;
+
 mod commits;
+
 mod diff_load;
+
 mod editor_target;
+
 mod file_filter;
+
 mod gaps;
+
 mod init;
+
 mod modes;
+
 mod navigation;
+
 mod pr;
+
 mod reviewed;
+
 mod search;
+
 mod session;
+
 pub mod sessions_tab;
+
 mod submit;
+
 mod theme_picker;
+
 mod tree;
+
 mod visual;
 
 #[cfg(test)]

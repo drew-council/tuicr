@@ -37,11 +37,7 @@ impl VcsBackend for DummyVcs {
     }
 }
 
-/// Build a test App with a single file containing `n` context lines.
-/// Total rendered lines = 1 (review header) + 1 (file header) + 1 (spacing)
-///                       + 1 (hunk header) + n (diff lines) = n + 4.
-/// The viewport is set to `viewport` lines.
-fn build_scroll_app(n: usize, viewport: usize, scroll_offset_config: usize) -> App {
+fn scroll_test_file(path: &str, n: usize) -> DiffFile {
     let lines: Vec<DiffLine> = (1..=n)
         .map(|i| DiffLine {
             origin: crate::model::LineOrigin::Context,
@@ -61,16 +57,23 @@ fn build_scroll_app(n: usize, viewport: usize, scroll_offset_config: usize) -> A
         new_count: n as u32,
     };
 
-    let file = DiffFile {
+    DiffFile {
         old_path: None,
-        new_path: Some(PathBuf::from("test.rs")),
+        new_path: Some(PathBuf::from(path)),
         status: FileStatus::Modified,
         hunks: vec![hunk],
         is_binary: false,
         is_too_large: false,
         is_commit_message: false,
         content_hash: 0,
-    };
+    }
+}
+/// Build a test App with a single file containing `n` context lines.
+/// Total rendered lines = 1 (review header) + 1 (file header) + 1 (spacing)
+///                       + 1 (hunk header) + n (diff lines) = n + 4.
+/// The viewport is set to `viewport` lines.
+fn build_scroll_app(n: usize, viewport: usize, scroll_offset_config: usize) -> App {
+    let file = scroll_test_file("test.rs", n);
 
     let vcs_info = VcsInfo {
         root_path: PathBuf::from("/tmp"),
@@ -109,6 +112,76 @@ fn build_scroll_app(n: usize, viewport: usize, scroll_offset_config: usize) -> A
     app
 }
 
+fn build_collapsed_header_scroll_app(reviewed_files: usize, viewport: usize) -> App {
+    let mut files: Vec<DiffFile> = (0..reviewed_files)
+        .map(|i| scroll_test_file(&format!("reviewed-{i}.rs"), 1))
+        .collect();
+    files.push(scroll_test_file("active.rs", 40));
+
+    let vcs_info = VcsInfo {
+        root_path: PathBuf::from("/tmp"),
+        head_commit: "abc".to_string(),
+        branch_name: Some("main".to_string()),
+        vcs_type: VcsType::Git,
+    };
+    let mut session = ReviewSession::new(
+        vcs_info.root_path.clone(),
+        vcs_info.head_commit.clone(),
+        vcs_info.branch_name.clone(),
+        SessionDiffSource::WorkingTree,
+    );
+    for file in &files {
+        session.add_diff_file(file);
+    }
+    for file in files.iter().take(reviewed_files) {
+        let path = file.display_path().clone();
+        session.get_file_mut(&path).unwrap().reviewed = true;
+    }
+
+    let mut app = App::build(
+        Box::new(DummyVcs {
+            info: vcs_info.clone(),
+        }),
+        vcs_info,
+        Theme::dark(),
+        None,
+        false,
+        files,
+        session,
+        DiffSource::WorkingTree,
+        InputMode::Normal,
+        Vec::new(),
+        None,
+        None,
+    )
+    .expect("failed to build test app");
+
+    app.diff_state.viewport_height = viewport;
+    app.diff_state.visible_line_count = viewport;
+    app.scroll_offset = 0;
+    app
+}
+
+#[test]
+fn page_scroll_round_trips_from_header_after_collapsed_files() {
+    let reviewed_files = 20;
+    let mut app = build_collapsed_header_scroll_app(reviewed_files, 40);
+    let start = app.calculate_file_scroll_offset(reviewed_files);
+    assert!(matches!(
+        app.line_annotations.get(start),
+        Some(AnnotatedLine::FileHeader { file_idx }) if *file_idx == reviewed_files
+    ));
+
+    app.diff_state.cursor_line = start;
+    app.diff_state.scroll_offset = start.saturating_sub(5);
+    let start_scroll = app.diff_state.scroll_offset;
+
+    app.scroll_down(10);
+    app.scroll_up(10);
+
+    assert_eq!(app.diff_state.cursor_line, start);
+    assert_eq!(app.diff_state.scroll_offset, start_scroll);
+}
 #[test]
 fn zz_on_last_line_centers_cursor() {
     // 40 diff lines + 3 overhead = 43 total. max_cursor = 41. Viewport = 20.

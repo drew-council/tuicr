@@ -784,12 +784,9 @@ impl App {
             self.down_released_since_arm = false;
             self.up_released_since_arm = false;
             self.diff_state.current_file_idx = idx;
-            self.diff_state.cursor_line = self.calculate_file_scroll_offset(idx);
-            self.diff_state.cursor_line = skip_decoration_forward(
-                &self.line_annotations,
-                self.diff_state.cursor_line,
-                self.line_annotations.len().saturating_sub(1),
-            );
+            let header_line = self.calculate_file_scroll_offset(idx);
+            self.diff_state.cursor_line =
+                self.first_content_line_in_file(idx).unwrap_or(header_line);
             let max_scroll = self.max_scroll_offset();
             self.diff_state.scroll_offset = self.diff_state.cursor_line.min(max_scroll);
 
@@ -1521,5 +1518,22 @@ impl App {
                 .map(|ln| (ln, LineSide::New))
                 .or_else(|| old_lineno.map(|ln| (ln, LineSide::Old))),
         }
+    }
+
+    /// First row of `file_idx` the cursor can act on: its header is navigable
+    /// but is not a hunk, so a deliberate jump should land past it. Returns
+    /// `None` for a file that renders as header-only (reviewed and collapsed),
+    /// where stepping forward would silently land in the next file.
+    fn first_content_line_in_file(&self, file_idx: usize) -> Option<usize> {
+        let header_line = self.calculate_file_scroll_offset(file_idx);
+        let line = skip_decoration_forward(
+            &self.line_annotations,
+            header_line.saturating_add(1),
+            self.line_annotations.len().saturating_sub(1),
+        );
+        let annotation = self.line_annotations.get(line)?;
+        (crate::app::annotation_file_idx(annotation) == Some(file_idx)
+            && !matches!(annotation, AnnotatedLine::FileHeader { .. }))
+        .then_some(line)
     }
 }
