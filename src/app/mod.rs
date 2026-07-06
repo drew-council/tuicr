@@ -558,19 +558,22 @@ pub fn find_source_line(
     }
 }
 
-/// True for rendered lines the cursor should never rest on — spacing between
-/// files and file header rows.
+/// True for rendered lines the cursor should never rest on.
+///
+/// File headers are intentionally navigable: reviewed files collapse to a
+/// header-only row, and mouse hover/click can place the cursor there. Treating
+/// those rows as decorations makes page motions skip across large runs of
+/// collapsed files instead of moving a predictable distance. The reviewed
+/// banner, unlike the file header, is display-only and remains non-navigable.
 fn is_decoration(annotation: &AnnotatedLine) -> bool {
     matches!(
         annotation,
-        AnnotatedLine::Spacing
-            | AnnotatedLine::FileHeader { .. }
-            | AnnotatedLine::ReviewedBanner { .. }
+        AnnotatedLine::Spacing | AnnotatedLine::ReviewedBanner { .. }
     )
 }
 
 /// Walk `start` forward (capped at `max_line`) to the nearest non-decoration
-/// annotation so scroll and jump motions land on actionable content.
+/// annotation so scroll and jump motions avoid blank separator rows.
 fn skip_decoration_forward(annotations: &[AnnotatedLine], start: usize, max_line: usize) -> usize {
     let mut line = start;
     while line < max_line && annotations.get(line).is_some_and(is_decoration) {

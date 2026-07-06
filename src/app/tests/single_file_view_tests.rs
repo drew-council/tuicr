@@ -548,9 +548,11 @@ fn next_and_prev_file_switch_files_without_keyboard_enhancement() {
     // `}` moves on from the edge where j stopped, and `{` comes back.
     app.next_file();
     assert_eq!(app.diff_state.current_file_idx, 1);
-    assert_eq!(
-        app.diff_state.cursor_line,
-        app.calculate_file_scroll_offset(1)
+    let landed = &app.line_annotations[app.diff_state.cursor_line];
+    assert_eq!(annotation_file_idx(landed), Some(1));
+    assert!(
+        !matches!(landed, AnnotatedLine::FileHeader { .. }),
+        "cursor should land on b.rs content, not its header: {landed:?}"
     );
 
     app.cursor_up(1);
