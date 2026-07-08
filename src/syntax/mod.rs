@@ -106,7 +106,7 @@ impl SyntaxHighlighter {
     /// Create a new syntax highlighter with a preloaded syntect theme.
     pub fn with_theme(theme: syntect::highlighting::Theme, add_bg: Color, del_bg: Color) -> Self {
         cap_oniguruma_retry_limit();
-        let syntax_set = two_face::syntax::extra_newlines();
+        let syntax_set = Self::syntax_set_with_builtin_overrides();
         let markdown_palette = cmark::MarkdownPalette::resolve(&theme);
         Self {
             syntax_set,
@@ -470,6 +470,29 @@ impl SyntaxHighlighter {
             .map(|(style, text)| (style.bg(bg_color), text))
             .collect()
     }
+
+    fn syntax_set_with_builtin_overrides() -> syntect::parsing::SyntaxSet {
+        let syntax_set = two_face::syntax::extra_newlines();
+
+        // two-face mirrors bat's bundled syntaxes, and neither currently ships
+        // Nushell. syntect cannot load Nushell's official VS Code tmLanguage
+        // JSON directly, so tuicr carries a small Sublime-syntax definition for
+        // .nu files until upstream coverage exists.
+        if syntax_set.find_syntax_by_extension("nu").is_some() {
+            return syntax_set;
+        }
+
+        let nushell = syntect::parsing::SyntaxDefinition::load_from_str(
+            include_str!("nushell.sublime-syntax"),
+            true,
+            None,
+        )
+        .expect("bundled Nushell syntax should parse");
+
+        let mut builder = syntax_set.into_builder();
+        builder.add(nushell);
+        builder.build()
+    }
 }
 
 #[cfg(test)]
@@ -481,6 +504,38 @@ mod tests {
     fn should_apply_oniguruma_retry_limit_once() {
         unsafe extern "C" {
             fn onig_get_retry_limit_in_match() -> std::os::raw::c_ulong;
+        }
+
+        #[test]
+        fn should_find_syntax_for_nushell_extension() {
+            let highlighter = SyntaxHighlighter::default();
+            let syntax = highlighter.get_syntax(Path::new("scripts/config.nu"));
+            assert!(syntax.is_some(), "should find syntax for .nu files");
+        }
+
+        #[test]
+        fn should_highlight_nushell_comments_strings_and_keywords() {
+            let highlighter = SyntaxHighlighter::default();
+            let lines = vec!["let greeting = \"hello\" # comment".to_string()];
+            let highlighted = highlighter
+                .highlight_file_lines(Path::new("script.nu"), &lines)
+                .expect(".nu should resolve to a syntax");
+            let spans = highlighted[0]
+                .as_ref()
+                .expect("Nushell line should highlight successfully");
+
+            assert!(
+                spans.iter().any(|(_, text)| text == "let"),
+                "keyword span should be present: {spans:?}"
+            );
+            assert!(
+                spans.iter().any(|(_, text)| text.contains("hello")),
+                "string span should be present: {spans:?}"
+            );
+            assert!(
+                spans.iter().any(|(_, text)| text.contains("# comment")),
+                "comment span should be present: {spans:?}"
+            );
         }
         cap_oniguruma_retry_limit();
         // SAFETY: reads one C global, takes no pointers, has no preconditions.

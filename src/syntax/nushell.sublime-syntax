@@ -1,0 +1,121 @@
+%YAML 1.2
+---
+# Minimal Nushell syntax for syntect/tuicr.
+# Nushell's official VS Code grammar is a tmLanguage JSON file, which syntect
+# cannot load directly, so this captures common Nushell constructs in the
+# Sublime .sublime-syntax format syntect supports.
+name: Nushell
+scope: source.shell.nu
+file_extensions:
+  - nu
+first_line_match: |-
+  (?x)^ \#! .* \bnu\b
+
+variables:
+  identifier: '[A-Za-z_][A-Za-z0-9_-]*'
+  path_identifier: '[A-Za-z_][A-Za-z0-9_ -]*'
+
+contexts:
+  main:
+    - include: comments
+    - include: strings
+    - include: declarations
+    - include: command-position
+    - include: variables
+    - include: flags
+    - include: constants
+    - include: numbers
+    - include: keywords
+    - include: operators
+    - include: punctuation
+
+  comments:
+    - match: '#.*$'
+      scope: comment.line.number-sign.nu
+
+  strings:
+    - match: '"'
+      scope: punctuation.definition.string.begin.nu
+      push: double-quoted-string
+    - match: "'"
+      scope: punctuation.definition.string.begin.nu
+      push: single-quoted-string
+    - match: '`'
+      scope: punctuation.definition.string.begin.nu
+      push: backtick-string
+
+  double-quoted-string:
+    - meta_scope: string.quoted.double.nu
+    - match: '\\\\(?:["''\\/bfrnt]|u\{[0-9A-Fa-f]{1,6}\})'
+      scope: constant.character.escape.nu
+    - match: '"'
+      scope: punctuation.definition.string.end.nu
+      pop: true
+
+  single-quoted-string:
+    - meta_scope: string.quoted.single.nu
+    - match: "'"
+      scope: punctuation.definition.string.end.nu
+      pop: true
+
+  backtick-string:
+    - meta_scope: string.quoted.other.backtick.nu
+    - match: '`'
+      scope: punctuation.definition.string.end.nu
+      pop: true
+
+  declarations:
+    - match: '\b(def(?:-env)?|extern(?:-wrapped)?|alias|module|use|source(?:-env)?|let|mut|const)\s+({{identifier}})?'
+      captures:
+        1: keyword.declaration.nu
+        2: entity.name.function.nu
+
+  command-position:
+    - match: '(^|[|;{(]\s*)({{path_identifier}})'
+      captures:
+        1: punctuation.separator.nu
+        2: entity.name.function.command.nu
+
+  variables:
+    - match: '\$env\b(?:\.[A-Za-z_][A-Za-z0-9_-]*)*'
+      scope: variable.other.environment.nu
+    - match: '\$nu\b(?:\.[A-Za-z_][A-Za-z0-9_-]*)*'
+      scope: variable.language.nu
+    - match: '\$[A-Za-z_][A-Za-z0-9_-]*'
+      scope: variable.other.nu
+    - match: '\$\d+'
+      scope: variable.other.positional.nu
+
+  flags:
+    - match: '(^|\s)(--[A-Za-z][A-Za-z0-9_-]*(?:=[^\s#|;,)\]}]+)?)'
+      captures:
+        2: variable.parameter.option.nu
+    - match: '(^|\s)(-[A-Za-z][A-Za-z0-9_-]*)'
+      captures:
+        2: variable.parameter.option.nu
+
+  constants:
+    - match: '\b(true|false)\b'
+      scope: constant.language.boolean.nu
+    - match: '\b(null|nothing)\b'
+      scope: constant.language.null.nu
+
+  numbers:
+    - match: '\b[+-]?(?:\d+\.\d+|\d+)(?:[eE][+-]?\d+)?(?:[KMGTPE]?i?B|sec|ms|ns|min|hr|day|wk)?\b'
+      scope: constant.numeric.nu
+
+  keywords:
+    - match: '\b(alias|break|catch|continue|else|export|export-env|for|hide(?:-env)?|if|in|loop|match|not-in|overlay|return|try|where|while)\b'
+      scope: keyword.control.nu
+    - match: '\b(and|or|xor|not|bit-or|bit-xor|bit-and|bit-shl|bit-shr|starts-with|ends-with|has|not-has)\b'
+      scope: keyword.operator.word.nu
+
+  operators:
+    - match: '(==|!=|<=|>=|=~|!~|\+\+|\+|-|\*\*|\*|//|/|<|>|=)'
+      scope: keyword.operator.nu
+    - match: '\|'
+      scope: punctuation.separator.pipe.nu
+
+  punctuation:
+    - match: '[{}\[\](),.;:]'
+      scope: punctuation.separator.nu
