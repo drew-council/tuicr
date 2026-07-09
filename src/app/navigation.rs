@@ -784,6 +784,15 @@ impl App {
             self.down_released_since_arm = false;
             self.up_released_since_arm = false;
             self.diff_state.current_file_idx = idx;
+
+            // Single-file view filters `line_annotations` by
+            // `current_file_idx`, so rebuild before using annotations to
+            // choose the cursor. Otherwise switching away from a reviewed
+            // file can skip a row based on its stale banner annotation.
+            if self.is_single_file_view {
+                self.rebuild_annotations();
+            }
+
             let header_line = self.calculate_file_scroll_offset(idx);
             self.diff_state.cursor_line =
                 self.first_content_line_in_file(idx).unwrap_or(header_line);
@@ -802,13 +811,6 @@ impl App {
 
             if let Some(tree_idx) = self.file_idx_to_tree_idx(idx) {
                 self.file_list_state.select(tree_idx);
-            }
-
-            // Single-file view filters `line_annotations` by
-            // `current_file_idx`, so a file switch must rebuild them or
-            // click hit-testing would resolve against the previous file.
-            if self.is_single_file_view {
-                self.rebuild_annotations();
             }
         }
     }

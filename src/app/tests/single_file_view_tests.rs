@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 struct StubVcs(VcsInfo);
+
 impl VcsBackend for StubVcs {
     fn info(&self) -> &VcsInfo {
         &self.0
@@ -633,6 +634,91 @@ fn effective_file_height_is_zero_for_non_current_in_single_file_view() {
     assert_eq!(app.effective_file_height(1, other), 0);
     let current = &app.diff_files[0].clone();
     assert!(app.effective_file_height(0, current) > 0);
+}
+
+#[test]
+fn mark_reviewed_advances_to_next_file_in_single_file_view() {
+    let files = vec![
+        file("a.rs", vec![hunk(1, 3)]),
+        file("b.rs", vec![hunk(1, 3)]),
+        file("c.rs", vec![hunk(1, 3)]),
+    ];
+    let mut app = app_with(files);
+    app.is_single_file_view = true;
+    app.diff_state.current_file_idx = 0;
+    app.rebuild_annotations();
+    let a = app.diff_files[0].display_path().clone();
+
+    app.toggle_reviewed();
+
+    assert!(app.session.is_file_reviewed(&a));
+    assert_eq!(app.diff_state.current_file_idx, 1);
+    let landed = &app.line_annotations[app.diff_state.cursor_line];
+    assert_eq!(annotation_file_idx(landed), Some(1));
+    assert!(
+        !matches!(landed, AnnotatedLine::FileHeader { .. }),
+        "cursor should land on b.rs content, not its header: {landed:?}"
+    );
+}
+
+#[test]
+fn mark_reviewed_stays_on_last_file_in_single_file_view() {
+    let files = vec![
+        file("a.rs", vec![hunk(1, 3)]),
+        file("b.rs", vec![hunk(1, 3)]),
+    ];
+    let mut app = app_with(files);
+    app.is_single_file_view = true;
+    app.diff_state.current_file_idx = 1;
+    app.rebuild_annotations();
+    let b = app.diff_files[1].display_path().clone();
+
+    app.toggle_reviewed();
+
+    assert!(app.session.is_file_reviewed(&b));
+    assert_eq!(app.diff_state.current_file_idx, 1);
+}
+
+#[test]
+fn unreview_does_not_advance_in_single_file_view() {
+    let files = vec![
+        file("a.rs", vec![hunk(1, 3)]),
+        file("b.rs", vec![hunk(1, 3)]),
+    ];
+    let mut app = app_with(files);
+    app.is_single_file_view = true;
+    app.diff_state.current_file_idx = 0;
+    app.rebuild_annotations();
+    let a = app.diff_files[0].display_path().clone();
+
+    // Mark reviewed (advances to b), then jump back and unreview a.
+    app.toggle_reviewed();
+    assert_eq!(app.diff_state.current_file_idx, 1);
+    app.jump_to_file(0);
+    assert!(app.session.is_file_reviewed(&a));
+
+    app.toggle_reviewed();
+
+    assert!(!app.session.is_file_reviewed(&a));
+    assert_eq!(app.diff_state.current_file_idx, 0);
+}
+
+#[test]
+fn mark_reviewed_does_not_auto_advance_in_multi_file_view() {
+    let files = vec![
+        file("a.rs", vec![hunk(1, 3)]),
+        file("b.rs", vec![hunk(1, 3)]),
+    ];
+    let mut app = app_with(files);
+    app.is_single_file_view = false;
+    app.diff_state.current_file_idx = 0;
+    app.rebuild_annotations();
+    let a = app.diff_files[0].display_path().clone();
+
+    app.toggle_reviewed();
+
+    assert!(app.session.is_file_reviewed(&a));
+    assert_eq!(app.diff_state.current_file_idx, 0);
 }
 
 #[test]

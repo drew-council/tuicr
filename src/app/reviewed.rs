@@ -328,6 +328,7 @@ impl App {
         self.revealed_reviewed_file = None;
         if let Some(review) = self.session.get_file_mut(&path) {
             review.reviewed = !review.reviewed;
+            let now_reviewed = review.reviewed;
             self.dirty = true;
 
             // Update current_file_idx before rebuilding annotations:
@@ -349,6 +350,18 @@ impl App {
             }
 
             if adjust_cursor {
+                // In single-file (focus) view, marking a file reviewed advances
+                // to the next file so review flow doesn't stall on the
+                // "Marked reviewed" banner. Unreviewing stays put so the
+                // user can re-open the body. Last file falls through to the
+                // banner placement below.
+                if now_reviewed && self.is_single_file_view {
+                    let current = self.diff_state.current_file_idx;
+                    self.next_file();
+                    if self.diff_state.current_file_idx != current {
+                        return;
+                    }
+                }
                 let header_line = self.calculate_file_scroll_offset(file_idx);
                 self.diff_state.cursor_line = header_line;
                 self.ensure_cursor_visible();
