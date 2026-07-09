@@ -357,21 +357,31 @@ where
         // into duplicate `DiffFile`s. Plain `gh pr diff` (no `--patch`)
         // returns the single cumulative diff. Hard-won lesson; see the
         // duplicate-files-in-list bug.
+        // The patch is fetched before the file metadata so that a 406 hands
+        // off to the recovery path without first paying for up to 30 pages of
+        // metadata we would then throw away.
+        let patch = match self.run_gh(
+            vec![
+                "pr".to_string(),
+                "diff".to_string(),
+                pr.number.to_string(),
+                "--repo".to_string(),
+                gh_repo_arg(&pr.repository),
+                "--color".to_string(),
+                "never".to_string(),
+            ],
+            &pr.repository.host,
+        ) {
+            Ok(patch) => patch,
+            Err(err) if is_diff_too_large_error(&err) => {
+                // GitHub can't render the patch. If we have a local checkout,
+                // fetch the PR ends and compute the diff with git instead of
+                // making the user re-run the fetch by hand.
+                return self.recover_large_pr_diff_via_local_fetch(pr, err);
+            }
+            Err(err) => return Err(err),
+        };
         let metadata = self.pull_request_file_metadata(pr)?;
-        let patch = self
-            .run_gh(
-                vec![
-                    "pr".to_string(),
-                    "diff".to_string(),
-                    pr.number.to_string(),
-                    "--repo".to_string(),
-                    gh_repo_arg(&pr.repository),
-                    "--color".to_string(),
-                    "never".to_string(),
-                ],
-                &pr.repository.host,
-            )
-            .map_err(|err| annotate_diff_too_large_error(err, pr))?;
         pair_metadata_with_patch(metadata, patch.as_bytes())
     }
 
@@ -601,6 +611,40 @@ impl<R> GitHubGhBackend<R>
 where
     R: GhCommandRunner,
 {
+    /// After GitHub refuses a >300-file PR diff, try to fetch the PR refs
+    /// into the local checkout and compute the cumulative three-dot diff
+    /// locally. Falls back to an annotated error when there is no checkout
+    /// or when the fetch / local diff still fails.
+    fn recover_large_pr_diff_via_local_fetch(
+        &self,
+        pr: &PullRequestDetails,
+        err: TuicrError,
+    ) -> Result<Vec<FilePatch>> {
+        let Some(root) = self.local_checkout.as_deref() else {
+            return Err(annotate_diff_too_large_error(err, pr, None));
+        };
+
+        if let Err(fetch_err) = fetch_pr_refs_for_local_diff(root, pr) {
+            return Err(annotate_diff_too_large_error(
+                err,
+                pr,
+                Some(fetch_err.as_str()),
+            ));
+        }
+
+        if let Some(diff) = local_merge_base_diff(root, &pr.base_sha, &pr.head_sha) {
+            return Ok(diff);
+        }
+
+        Err(annotate_diff_too_large_error(
+            err,
+            pr,
+            Some(
+                "git fetch succeeded, but the local checkout still does not contain both PR endpoint SHAs",
+            ),
+        ))
+    }
+
     fn build_review_threads_args(
         &self,
         pr: &PullRequestDetails,
@@ -938,26 +982,80 @@ fn gh_repo_arg(repository: &ForgeRepository) -> String {
     }
 }
 
+/// True when `gh pr diff` failed because GitHub refused a >300-file patch.
+fn is_diff_too_large_error(err: &TuicrError) -> bool {
+    let lower = err.to_string().to_ascii_lowercase();
+    lower.contains("exceeded the maximum number of files") || lower.contains("too_large")
+}
+
+/// Fetch the PR base branch tip and `pull/<N>/head` into the local
+/// checkout so `local_merge_base_diff` can resolve both endpoint SHAs.
+/// Matches the recovery command we previously printed for the user.
+fn fetch_pr_refs_for_local_diff(
+    repo_root: &Path,
+    pr: &PullRequestDetails,
+) -> std::result::Result<(), String> {
+    let pull_ref = format!("pull/{}/head", pr.number);
+    run_command_output(
+        "git",
+        Some(repo_root),
+        [
+            "fetch",
+            "origin",
+            pr.base_ref_name.as_str(),
+            pull_ref.as_str(),
+        ]
+        .iter()
+        .map(|s| OsStr::new(*s)),
+    )
+    .map(|_| ())
+    .map_err(|err| {
+        if err.stderr.trim().is_empty() {
+            "git fetch origin failed".to_string()
+        } else {
+            err.stderr
+        }
+    })
+}
+
 /// GitHub refuses to render diffs past 300 files (HTTP 406, "diff exceeded
-/// the maximum number of files"). When that's what killed `gh pr diff`,
-/// tell the user about the local-checkout fast path instead of leaving
-/// them with a dead end.
-fn annotate_diff_too_large_error(err: TuicrError, pr: &PullRequestDetails) -> TuicrError {
-    let message = err.to_string();
-    let lower = message.to_ascii_lowercase();
-    if !(lower.contains("exceeded the maximum number of files") || lower.contains("too_large")) {
+/// the maximum number of files"). When automatic local recovery is
+/// unavailable or still fails, tell the user how to finish the fetch by
+/// hand instead of leaving them with a dead end.
+fn annotate_diff_too_large_error(
+    err: TuicrError,
+    pr: &PullRequestDetails,
+    recovery_detail: Option<&str>,
+) -> TuicrError {
+    if !is_diff_too_large_error(&err) {
         return err;
     }
+    let message = err.to_string();
+    let recovery = match recovery_detail {
+        Some(detail) => format!(
+            "tuicr tried to fetch the PR refs into the local checkout and compute \
+             the diff with git, but that failed:\n  {detail}\n\n\
+             From a checkout of {owner}/{name}, run:\n\
+             \x20 git fetch origin {base_ref} pull/{number}/head\n\
+             then re-run `tuicr pr {number}`.",
+            owner = pr.repository.owner,
+            name = pr.repository.name,
+            base_ref = pr.base_ref_name,
+            number = pr.number,
+        ),
+        None => format!(
+            "tuicr can compute the diff locally instead: run it from a checkout of \
+             {owner}/{name} with both ends of the PR fetched, e.g.\n\
+             \x20 git fetch origin {base_ref} pull/{number}/head\n\
+             then re-run `tuicr pr {number}`.",
+            owner = pr.repository.owner,
+            name = pr.repository.name,
+            base_ref = pr.base_ref_name,
+            number = pr.number,
+        ),
+    };
     TuicrError::Forge(format!(
-        "{message}\n\nThis PR is larger than GitHub's 300-file diff API limit. \
-         tuicr can compute the diff locally instead: run it from a checkout of \
-         {owner}/{name} with both ends of the PR fetched, e.g.\n\
-         \x20 git fetch origin {base_ref} pull/{number}/head\n\
-         then re-run `tuicr pr {number}`.",
-        owner = pr.repository.owner,
-        name = pr.repository.name,
-        base_ref = pr.base_ref_name,
-        number = pr.number,
+        "{message}\n\nThis PR is larger than GitHub's 300-file diff API limit. {recovery}"
     ))
 }
 
@@ -1982,6 +2080,7 @@ Match host github-work
     #[test]
     fn should_hint_local_checkout_when_pr_diff_exceeds_file_limit() {
         // given — gh fails the way it does on >300-file PRs (HTTP 406)
+        // and there is no local checkout to recover from.
         let runner = FakeGhRunner::default();
         runner.pr_diff_error.replace(Some(GhCommandError::Failed {
             status: Some(1),
@@ -2004,6 +2103,128 @@ Match host github-work
         assert!(
             message.contains("git fetch origin main pull/125/head"),
             "expected fetch hint, got: {message}"
+        );
+        assert!(
+            !message.contains("tuicr tried to fetch"),
+            "without a local checkout, recovery should not claim a fetch attempt: {message}"
+        );
+    }
+
+    #[test]
+    fn should_auto_fetch_and_compute_local_diff_when_pr_exceeds_file_limit() {
+        // given — a bare origin with the PR ends, and a clone that only has
+        // the base commit (so the first local fast path misses). `gh pr diff`
+        // then 406s, which must trigger an automatic `git fetch` of the PR
+        // refs followed by a successful local three-dot diff.
+        fn git(dir: &Path, args: &[&str]) {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .output()
+                .expect("git spawns");
+            assert!(
+                output.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        let origin = tempfile::tempdir().unwrap();
+        let (base_sha, head_sha) = init_repo_with_two_commits(origin.path());
+        // Normalize the default branch name so `git fetch origin main ...`
+        // matches the recovery path tuicr runs for typical GitHub PRs.
+        git(origin.path(), &["branch", "-M", "main"]);
+
+        // Make origin a bare remote so the clone can fetch from it.
+        let bare = tempfile::tempdir().unwrap();
+        let status = std::process::Command::new("git")
+            .args(["clone", "--bare", "--quiet"])
+            .arg(origin.path())
+            .arg(bare.path())
+            .status()
+            .expect("git clone --bare spawns");
+        assert!(status.success(), "git clone --bare failed");
+
+        // Publish the PR head the way GitHub stores it (`refs/pull/<N>/head`).
+        git(
+            bare.path(),
+            &["update-ref", "refs/pull/125/head", &head_sha],
+        );
+
+        // Clone a working checkout, then drop every object newer than base
+        // so the initial local fast path misses and recovery has to fetch.
+        let checkout = tempfile::tempdir().unwrap();
+        let status = std::process::Command::new("git")
+            .args(["clone", "--quiet"])
+            .arg(bare.path())
+            .arg(checkout.path())
+            .status()
+            .expect("git clone spawns");
+        assert!(status.success(), "git clone failed");
+        git(
+            checkout.path(),
+            &[
+                "-c",
+                "gc.reflogExpire=now",
+                "-c",
+                "gc.reflogExpireUnreachable=now",
+                "reset",
+                "--hard",
+                "--quiet",
+                &base_sha,
+            ],
+        );
+        // Drop the remote-tracking tip and prune unreachable objects so
+        // `cat-file -e <head>` fails until fetch reintroduces it.
+        git(
+            checkout.path(),
+            &["update-ref", "-d", "refs/remotes/origin/main"],
+        );
+        let _ = std::process::Command::new("git")
+            .arg("-C")
+            .arg(checkout.path())
+            .args(["reflog", "expire", "--expire=now", "--all"])
+            .status();
+        git(checkout.path(), &["prune", "--expire", "now"]);
+
+        // Confirm head is absent before the recovery path runs.
+        let head_present = std::process::Command::new("git")
+            .arg("-C")
+            .arg(checkout.path())
+            .args(["cat-file", "-e", &head_sha])
+            .status()
+            .expect("git cat-file spawns");
+        assert!(
+            !head_present.success(),
+            "precondition: head SHA must be missing from the checkout before auto-fetch"
+        );
+
+        let runner = FakeGhRunner::default();
+        runner.pr_diff_error.replace(Some(GhCommandError::Failed {
+            status: Some(1),
+            stderr: "could not find pull request diff: HTTP 406: Sorry, the diff \
+                     exceeded the maximum number of files (300)."
+                .to_string(),
+        }));
+        let mut backend = GitHubGhBackend::with_runner(Some(repo()), runner);
+        backend.set_local_checkout(Some(checkout.path().to_path_buf()));
+        let mut details = backend
+            .get_pull_request(parse_pull_request_target("125").unwrap())
+            .unwrap();
+        details.base_sha = base_sha;
+        details.head_sha = head_sha;
+        details.base_ref_name = "main".to_string();
+
+        // when
+        let diff = backend
+            .get_pull_request_diff(&details)
+            .expect("auto-fetch recovery should produce a local diff");
+
+        // then
+        assert!(
+            diff.iter().any(|f| f.patch.contains("+hello world")),
+            "unexpected diff: {diff:?}"
         );
     }
 
