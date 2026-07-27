@@ -709,6 +709,13 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                "  :branch   ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("Copy the review's branch name to clipboard"),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  :messages ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),

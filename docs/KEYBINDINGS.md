@@ -207,6 +207,7 @@ In command mode,
 | `:copy-url` | Copy the open PR URL to clipboard (PR mode) |
 | `:summary` | Show all pending local-draft comments; `j`/`k` select and `Enter` jumps |
 | `:diff` | Toggle diff view (unified / side-by-side) |
+| `:branch` | Copy the review's branch name to clipboard (PR/MR head branch, else local branch) |
 | `:theme` | Open the runtime theme picker (live preview; `/` filters, `Enter` applies and saves, `Esc` reverts) |
 | `:theme <name>` | Apply and save `<name>` directly, without opening the picker |
 | `:focus` (`:f`) | Toggle single-file view |
