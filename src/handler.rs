@@ -38,6 +38,7 @@ const COMMAND_SPECS: &[CommandSpec] = &[
     ),
     CommandSpec::new(&["clearc"], CommandKind::Clear(ClearScope::CommentsOnly)),
     CommandSpec::new(&["help", "h"], CommandKind::Help),
+    CommandSpec::new(&["branch"], CommandKind::CopyBranch),
     CommandSpec::new(&["messages"], CommandKind::MessageDetails),
     CommandSpec::new(&["version"], CommandKind::Version),
     CommandSpec::new(&["update"], CommandKind::Update),
@@ -160,6 +161,7 @@ enum CommandKind {
     SubmitPicker,
     Submit(SubmitEvent),
     Comments(PrCommentsVisibility),
+    CopyBranch,
     ThemePicker,
 }
 
@@ -918,6 +920,10 @@ fn dispatch_command(app: &mut App, kind: CommandKind) -> CommandAfterDispatch {
             app.exit_command_mode();
             app.toggle_help();
             CommandAfterDispatch::KeepMode
+        }
+        CommandKind::CopyBranch => {
+            app.copy_branch_name();
+            CommandAfterDispatch::ExitCommandMode
         }
         CommandKind::MessageDetails => {
             app.exit_command_mode();
