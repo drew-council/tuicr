@@ -30,6 +30,7 @@ src/
 │   ├── install.rs       # `tuicr update` orchestration, release verification, and runtime adapter
 │   └── install/         # Install detection, archive extraction, replacement, and focused tests
 ├── tuicrignore.rs       # .tuicrignore loader + diff file filtering (gitignore-style patterns)
+├── gitattributes.rs     # .gitattributes reader for linguist-generated / linguist-vendored tags
 ├── theme/
 │   └── mod.rs           # Theme palette definitions + bundled/local theme resolution
 │
@@ -167,6 +168,22 @@ Repository-managed agent integrations:
   hunk in the file, so it must not be called speculatively).
 - `FileTreeFilter` has a hand-written `Default` because `show_reviewed` defaults to *true*;
   a derived `bool` default would silently boot with reviewed files hidden.
+- **`.gitattributes` tags are a third, hidden-by-default gate.** `src/gitattributes.rs` resolves
+  `linguist-generated` / `gitlab-generated` / `linguist-vendored` for each diff file (root and
+  nested `.gitattributes` plus `.git/info/attributes`, git precedence, via `Gitignore::matched`
+  so directory patterns do not recurse). Results live in `App::file_attributes`, keyed by
+  display path, entries for tagged files only. `file_filter.show_generated` /
+  `show_vendored` (`:set generated!` / `:set vendored!`, config `show_generated` /
+  `show_vendored`) default to *false*. The gate sits in `file_matches_patterns`, not
+  `file_passes_filter`: a hidden lockfile is outside the review population, so it must not
+  pad the `reviewed/total` denominator the way hidden reviewed files deliberately do. The
+  count fast paths in `file_count`/`reviewed_count` therefore also check
+  `attribute_hiding_active()`.
+- `App::ensure_file_attributes()` runs at the top of `rebuild_annotations()` and recomputes
+  only when the display-path sequence differs from the last run or
+  `invalidate_file_attributes()` was called (`:e` does this). Every diff load already ends in
+  `rebuild_annotations`, so the many `self.diff_files = ...` sites need no extra call. It reads
+  from `local_repo_root`, so PR mode uses the local checkout's attributes like `.tuicrignore`.
 - Marking a file reviewed while hiding deletes the row the cursor sits on, so
   `toggle_reviewed_for_file_idx` calls `advance_past_hidden_file()` to land on the next
   visible file (wrapping, then parking at the overview once the queue empties). It runs

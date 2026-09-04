@@ -97,6 +97,41 @@ you to the next unreviewed file, wrapping at the end. A hidden file cannot be
 un-reviewed, because `r` can no longer reach it — `:set reviewed` brings it back.
 Start a session with them hidden via `show_reviewed = false` in `config.toml`.
 
+### Generated and vendored files
+
+Files tagged in `.gitattributes` with `linguist-generated` (or its GitLab alias
+`gitlab-generated`) or `linguist-vendored` are hidden by default — the same tags
+GitHub and GitLab use to collapse a file in a pull-request diff. Lockfiles,
+minified bundles, protobuf output, and vendored dependencies stay out of the tree,
+the diff pane, navigation, the `+/-` counts, and the tree title's
+`reviewed/total` fraction. They are *not* part of the review until you ask for
+them.
+
+`:set generated` / `:set nogenerated` / `:set generated!` (or the bare
+`:generated`) reveal and hide generated files; `:set vendored` /
+`:set novendored` / `:set vendored!` (or `:vendored`) do the same for vendored
+files. Both are command-only. When something is hidden the tree's bottom border
+says so (`2 generated hidden · 1 vendored hidden`); revealed files carry a dim
+`(generated)` / `(vendored)` suffix so you can skip them knowingly. Start a
+session with them visible via `show_generated = true` / `show_vendored = true`
+in `config.toml`.
+
+tuicr reads the root `.gitattributes`, any nested `.gitattributes` on the path
+to a file, and the local `.git/info/attributes`, with git's precedence: the
+closest file wins, and the last matching line within a file wins. `-attr`,
+`!attr`, and `attr=false` unset a tag. To hide a file without committing
+anything, add a line to `.git/info/attributes`:
+
+```gitattributes
+*.lock            linguist-generated
+dist/**           linguist-generated
+third_party/**    linguist-vendored
+```
+
+To drop a file from the review entirely rather than hide it, use
+[`.tuicrignore`](CONFIG.md#tuicrignore) instead. `:e` re-reads the attribute
+files.
+
 ### Search
 
 `/` moves only the tree selection to the next matching path, expanding collapsed
@@ -234,6 +269,12 @@ In command mode,
 | `:set reviewed` | Show files already marked reviewed |
 | `:set noreviewed` | Hide files already marked reviewed |
 | `:set reviewed!` / `:reviewed` | Toggle files already marked reviewed |
+| `:set generated` | Show files tagged `linguist-generated` in `.gitattributes` |
+| `:set nogenerated` | Hide files tagged `linguist-generated` (the default) |
+| `:set generated!` / `:generated` | Toggle `.gitattributes` generated files |
+| `:set vendored` | Show files tagged `linguist-vendored` in `.gitattributes` |
+| `:set novendored` | Hide files tagged `linguist-vendored` (the default) |
+| `:set vendored!` / `:vendored` | Toggle `.gitattributes` vendored files |
 | `:clear` | Clear all comments |
 | `:clearc` | Clear comments without clearing reviewed marks |
 | `:help` (`:h`) | Open the help screen |

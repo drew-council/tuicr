@@ -14,18 +14,28 @@
 //! the diff viewport where the user left it.
 
 use super::*;
+use crate::gitattributes::GitAttributes;
 use regex::RegexBuilder;
 
 impl App {
-    /// True when `file` survives the `i`/`e` patterns, ignoring whether it is
+    /// True when `file` survives the `i`/`e` patterns and the
+    /// `.gitattributes` generated/vendored toggles, ignoring whether it is
     /// reviewed. This is the *review population*: what the tree title's
     /// `reviewed/total` fraction counts and what a `/` search walks.
+    ///
+    /// Hidden generated/vendored files sit here rather than in
+    /// `file_passes_filter` because they are not part of the review at all
+    /// until revealed: a lockfile nobody will read must not inflate the
+    /// denominator of the progress fraction.
     ///
     /// Commit-message pseudo-files are matched like any other row: their
     /// display path is `Commit Message (<sha>)`, so `i \.rs$` hides them
     /// along with every other non-Rust entry. That keeps "include" meaning
     /// exactly what it says instead of carving out a silent exception.
     pub fn file_matches_patterns(&self, file: &DiffFile) -> bool {
+        if self.file_hidden_by_attributes(file) {
+            return false;
+        }
         let path = file.display_path().to_string_lossy().to_string();
         if let Some(include) = &self.file_filter.include
             && !include.regex.is_match(&path)
@@ -63,6 +73,162 @@ impl App {
 
     pub fn file_filter_active(&self) -> bool {
         self.file_filter.include.is_some() || self.file_filter.exclude.is_some()
+    }
+
+    // ---- .gitattributes generated / vendored files -------------------------
+
+    /// True when `file` carries a `.gitattributes` tag whose toggle is
+    /// currently off.
+    pub fn file_hidden_by_attributes(&self, file: &DiffFile) -> bool {
+        let Some(attrs) = self.file_attributes.get(file.display_path()) else {
+            return false;
+        };
+        (attrs.generated && !self.file_filter.show_generated)
+            || (attrs.vendored && !self.file_filter.show_vendored)
+    }
+
+    /// True when at least one file could be hidden by a tag: the counts have
+    /// to walk the files instead of taking their unfiltered fast path.
+    pub fn attribute_hiding_active(&self) -> bool {
+        !self.file_attributes.is_empty()
+            && (!self.file_filter.show_generated || !self.file_filter.show_vendored)
+    }
+
+    /// `(generated, vendored)` files currently hidden by their tag.
+    pub fn hidden_attribute_counts(&self) -> (usize, usize) {
+        let generated = if self.file_filter.show_generated {
+            0
+        } else {
+            self.file_attributes
+                .values()
+                .filter(|a| a.generated)
+                .count()
+        };
+        let vendored = if self.file_filter.show_vendored {
+            0
+        } else {
+            self.file_attributes.values().filter(|a| a.vendored).count()
+        };
+        (generated, vendored)
+    }
+
+    /// The tag to show beside a revealed file, or `None` for untagged files.
+    pub fn file_attribute_label(&self, file: &DiffFile) -> Option<&'static str> {
+        let attrs = self.file_attributes.get(file.display_path())?;
+        if attrs.generated {
+            Some("generated")
+        } else if attrs.vendored {
+            Some("vendored")
+        } else {
+            None
+        }
+    }
+
+    /// Recompute `file_attributes` when the file set changed (or `:e` marked
+    /// it stale). Called from `rebuild_annotations`, which every diff load
+    /// reaches, so the assignment sites need no extra bookkeeping.
+    pub(crate) fn ensure_file_attributes(&mut self) {
+        let current = || {
+            self.diff_files
+                .iter()
+                .filter(|file| !file.is_commit_message)
+                .map(|file| file.display_path())
+        };
+        // Compare before allocating: this runs on every rebuild, and most
+        // rebuilds (comments, marks, toggles) leave the file set untouched.
+        if !self.file_attributes_stale && current().eq(self.file_attributes_paths.iter()) {
+            return;
+        }
+        let paths: Vec<PathBuf> = current().cloned().collect();
+        self.file_attributes_stale = false;
+        self.file_attributes = match self.local_repo_root.as_deref() {
+            Some(root) => GitAttributes::classify(root, paths.iter().map(PathBuf::as_path)),
+            None => HashMap::new(),
+        };
+        self.file_attributes_paths = paths;
+
+        // Loads reset `current_file_idx` to 0 before rebuilding. If that file
+        // just turned out to be hidden, the diff title (and single-file view,
+        // which renders only the current file) would point at a row the tree
+        // does not show. Only the index moves: the cursor is already at the
+        // top, and hidden files occupy no rows, so it lands on this file.
+        let current_hidden = self
+            .diff_files
+            .get(self.diff_state.current_file_idx)
+            .is_some_and(|file| self.file_hidden_by_attributes(file));
+        if current_hidden
+            && let Some(idx) = self
+                .diff_files
+                .iter()
+                .position(|file| self.file_passes_filter(file))
+        {
+            self.diff_state.current_file_idx = idx;
+        }
+    }
+
+    /// Force the next `rebuild_annotations` to re-read `.gitattributes`.
+    pub fn invalidate_file_attributes(&mut self) {
+        self.file_attributes_stale = true;
+    }
+
+    pub fn show_generated(&self) -> bool {
+        self.file_filter.show_generated
+    }
+
+    pub fn show_vendored(&self) -> bool {
+        self.file_filter.show_vendored
+    }
+
+    /// Apply the `show_generated` config default at startup, silently.
+    pub fn init_show_generated(&mut self, show: bool) {
+        self.file_filter.show_generated = show;
+        self.apply_file_filter_change();
+    }
+
+    /// Apply the `show_vendored` config default at startup, silently.
+    pub fn init_show_vendored(&mut self, show: bool) {
+        self.file_filter.show_vendored = show;
+        self.apply_file_filter_change();
+    }
+
+    pub fn set_show_generated(&mut self, show: bool) {
+        self.file_filter.show_generated = show;
+        self.apply_file_filter_change();
+        let tagged = self
+            .file_attributes
+            .values()
+            .filter(|a| a.generated)
+            .count();
+        self.report_attribute_visibility("generated", show, tagged);
+    }
+
+    pub fn toggle_show_generated(&mut self) {
+        self.set_show_generated(!self.file_filter.show_generated);
+    }
+
+    pub fn set_show_vendored(&mut self, show: bool) {
+        self.file_filter.show_vendored = show;
+        self.apply_file_filter_change();
+        let tagged = self.file_attributes.values().filter(|a| a.vendored).count();
+        self.report_attribute_visibility("vendored", show, tagged);
+    }
+
+    pub fn toggle_show_vendored(&mut self) {
+        self.set_show_vendored(!self.file_filter.show_vendored);
+    }
+
+    fn report_attribute_visibility(&mut self, label: &str, shown: bool, tagged: usize) {
+        if tagged == 0 {
+            self.set_message(format!(
+                "No {label} files in this diff \u{00b7} tag them with linguist-{label} in .gitattributes"
+            ));
+        } else if shown {
+            self.set_message(format!("Showing {tagged} {label} files"));
+        } else {
+            self.set_message(format!(
+                "Hiding {tagged} {label} files \u{00b7} :set {label} shows them again"
+            ));
+        }
     }
 
     // ---- hiding reviewed files -------------------------------------------

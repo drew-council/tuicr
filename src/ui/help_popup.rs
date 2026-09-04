@@ -470,6 +470,12 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         Line::from(Span::raw(
             "  :set noreviewed hides files already marked reviewed.",
         )),
+        Line::from(Span::raw(
+            "  Files tagged linguist-generated / linguist-vendored in .gitattributes",
+        )),
+        Line::from(Span::raw(
+            "  start hidden; :set generated / :set vendored reveal them.",
+        )),
         Line::from(""),
         Line::from(Span::styled(
             "Comment Navigator",
@@ -876,6 +882,22 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
                 Style::default().add_modifier(Modifier::BOLD),
             ),
             Span::raw("  Show files marked reviewed (noreviewed hides, reviewed! toggles)"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  :set generated",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(
+                "  Show .gitattributes generated files (nogenerated hides, generated! toggles)",
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  :set vendored",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  Show .gitattributes vendored files (novendored hides, vendored! toggles)"),
         ]),
         Line::from(vec![
             Span::styled(

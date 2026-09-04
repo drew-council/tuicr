@@ -12,6 +12,7 @@ use crate::error::{Result, TuicrError};
 use crate::forge::context::{ContextProvider, ForgeContextProvider, VcsContextProvider};
 use crate::forge::selector::PullRequestsTab;
 use crate::forge::traits::{ForgeBackend, ForgeRepository};
+use crate::gitattributes::FileAttributes;
 use crate::model::review::{CommentLocation, FileReview};
 use crate::model::{
     ClearScope, Comment, CommentType, DiffFile, DiffHunk, DiffLine, FileStatus, LineOrigin,
@@ -1169,6 +1170,18 @@ pub struct App {
     pub file_filter: FileTreeFilter,
     /// Runtime `:theme` picker state.
     pub theme_picker: ThemePickerState,
+    /// `.gitattributes` generated/vendored tags for the files in `diff_files`,
+    /// keyed by display path. Only tagged files have an entry. Refreshed by
+    /// `ensure_file_attributes` (from `rebuild_annotations`) whenever the
+    /// file set changes, so the many `diff_files` assignment sites need no
+    /// extra call.
+    pub(crate) file_attributes: HashMap<PathBuf, FileAttributes>,
+    /// The display paths `file_attributes` was computed for, in order. A
+    /// cheap fingerprint so a rebuild with the same files skips the disk.
+    pub(crate) file_attributes_paths: Vec<PathBuf>,
+    /// Set by `:e` so a changed `.gitattributes` is re-read even when the
+    /// fingerprint matches.
+    pub(crate) file_attributes_stale: bool,
     pub command_buffer: String,
     pub(crate) command_completion: Option<CommandCompletionState>,
     pub(crate) command_return_mode: InputMode,
@@ -1672,11 +1685,20 @@ pub struct FileTreeFilter {
     /// False hides files marked reviewed from the tree and the diff (`H`,
     /// `:set noreviewed`, config `show_reviewed`).
     pub show_reviewed: bool,
+    /// False hides files tagged `linguist-generated` / `gitlab-generated` in
+    /// `.gitattributes` (`:set generated`, config `show_generated`). Unlike
+    /// `show_reviewed` these start hidden: the tag exists to keep them out
+    /// of the way.
+    pub show_generated: bool,
+    /// False hides files tagged `linguist-vendored` in `.gitattributes`
+    /// (`:set vendored`, config `show_vendored`).
+    pub show_vendored: bool,
 }
 
 impl Default for FileTreeFilter {
     /// Hand-written because `show_reviewed` defaults to *true*: a derived
-    /// `bool` default would silently boot with reviewed files hidden.
+    /// `bool` default would silently boot with reviewed files hidden. The
+    /// attribute toggles default to false on purpose (see the fields).
     fn default() -> Self {
         Self {
             include: None,
@@ -1684,6 +1706,8 @@ impl Default for FileTreeFilter {
             search: None,
             draft: None,
             show_reviewed: true,
+            show_generated: false,
+            show_vendored: false,
         }
     }
 }

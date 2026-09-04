@@ -71,6 +71,18 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         &["reviewed", "set reviewed!"],
         CommandKind::ToggleShowReviewed,
     ),
+    CommandSpec::new(&["set generated"], CommandKind::SetShowGenerated(true)),
+    CommandSpec::new(&["set nogenerated"], CommandKind::SetShowGenerated(false)),
+    CommandSpec::new(
+        &["generated", "set generated!"],
+        CommandKind::ToggleShowGenerated,
+    ),
+    CommandSpec::new(&["set vendored"], CommandKind::SetShowVendored(true)),
+    CommandSpec::new(&["set novendored"], CommandKind::SetShowVendored(false)),
+    CommandSpec::new(
+        &["vendored", "set vendored!"],
+        CommandKind::ToggleShowVendored,
+    ),
     CommandSpec::new(&["diff"], CommandKind::Diff),
     CommandSpec::new(&["focus", "f"], CommandKind::Focus),
     CommandSpec::new(&["stage"], CommandKind::Stage),
@@ -156,6 +168,10 @@ enum CommandKind {
     ToggleCommits,
     SetShowReviewed(bool),
     ToggleShowReviewed,
+    SetShowGenerated(bool),
+    ToggleShowGenerated,
+    SetShowVendored(bool),
+    ToggleShowVendored,
     Diff,
     Focus,
     Stage,
@@ -979,6 +995,22 @@ fn dispatch_command(app: &mut App, kind: CommandKind) -> CommandAfterDispatch {
             app.toggle_show_reviewed();
             CommandAfterDispatch::ExitCommandMode
         }
+        CommandKind::SetShowGenerated(show) => {
+            app.set_show_generated(show);
+            CommandAfterDispatch::ExitCommandMode
+        }
+        CommandKind::ToggleShowGenerated => {
+            app.toggle_show_generated();
+            CommandAfterDispatch::ExitCommandMode
+        }
+        CommandKind::SetShowVendored(show) => {
+            app.set_show_vendored(show);
+            CommandAfterDispatch::ExitCommandMode
+        }
+        CommandKind::ToggleShowVendored => {
+            app.toggle_show_vendored();
+            CommandAfterDispatch::ExitCommandMode
+        }
         CommandKind::Diff => {
             app.toggle_diff_view_mode();
             CommandAfterDispatch::ExitCommandMode
@@ -1027,6 +1059,9 @@ fn dispatch_command(app: &mut App, kind: CommandKind) -> CommandAfterDispatch {
 }
 
 fn reload_review(app: &mut App) {
+    // `.gitattributes` may have changed on disk; the path fingerprint alone
+    // would not notice when the file set is unchanged.
+    app.invalidate_file_attributes();
     let comment_reload = app.reload_persisted_session_if_changed(true);
     if matches!(app.diff_source, app::DiffSource::PullRequest(_)) {
         if let Err(e) = comment_reload {
@@ -1925,6 +1960,42 @@ mod command_tests {
         assert_eq!(
             command_spec_for("reviewed").map(|spec| spec.kind),
             Some(CommandKind::ToggleShowReviewed)
+        );
+    }
+
+    #[test]
+    fn parses_every_generated_and_vendored_visibility_command_form() {
+        assert_eq!(
+            command_spec_for("set generated").map(|spec| spec.kind),
+            Some(CommandKind::SetShowGenerated(true))
+        );
+        assert_eq!(
+            command_spec_for("set nogenerated").map(|spec| spec.kind),
+            Some(CommandKind::SetShowGenerated(false))
+        );
+        assert_eq!(
+            command_spec_for("set generated!").map(|spec| spec.kind),
+            Some(CommandKind::ToggleShowGenerated)
+        );
+        assert_eq!(
+            command_spec_for("generated").map(|spec| spec.kind),
+            Some(CommandKind::ToggleShowGenerated)
+        );
+        assert_eq!(
+            command_spec_for("set vendored").map(|spec| spec.kind),
+            Some(CommandKind::SetShowVendored(true))
+        );
+        assert_eq!(
+            command_spec_for("set novendored").map(|spec| spec.kind),
+            Some(CommandKind::SetShowVendored(false))
+        );
+        assert_eq!(
+            command_spec_for("set vendored!").map(|spec| spec.kind),
+            Some(CommandKind::ToggleShowVendored)
+        );
+        assert_eq!(
+            command_spec_for("vendored").map(|spec| spec.kind),
+            Some(CommandKind::ToggleShowVendored)
         );
     }
 }

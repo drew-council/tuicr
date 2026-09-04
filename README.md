@@ -297,7 +297,8 @@ on Windows. Local themes may reference a local `syntax_theme = "my-syntax.tmThem
 syntax highlighting. A ready-to-copy example lives at [`examples/tuicr-teal.toml`](examples/tuicr-teal.toml)
 with its matching [`examples/tuicr-teal-syntax.tmTheme`](examples/tuicr-teal-syntax.tmTheme) syntax theme.
 
-Full options, theme resolution precedence, `comment_types` semantics, and `.tuicrignore` rules in
+Full options, theme resolution precedence, `comment_types` semantics, `.tuicrignore` rules, and the
+`.gitattributes` generated/vendored tags that hide files by default in
 [docs/CONFIG.md](docs/CONFIG.md).
 
 ## Keybindings
@@ -316,6 +317,7 @@ A first-session cheatsheet. Press `?` inside tuicr for the full reference.
 | `n` / `N` | Next / previous search match (wraps); matches stay highlighted — `Esc` clears |
 | `i` / `e` (file tree) | Filter files in / out by regex; narrows the tree **and** the diff |
 | `I` / `E` (file tree) | Clear the include / exclude filter |
+| `:set generated` / `:set vendored` | Reveal files hidden by `linguist-generated` / `linguist-vendored` in `.gitattributes` |
 | `c` / `C` | Add line / file comment |
 | `v` / `V` | Visual mode (range comment) |
 | `r` | Toggle file reviewed |
