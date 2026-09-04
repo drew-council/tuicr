@@ -12,8 +12,11 @@ use crate::ui::diff_view::apply_horizontal_scroll;
 use crate::ui::styles;
 
 const EXPANDED_GLYPH: &str = "\u{25bc}"; // ▼
+
 const COLLAPSED_GLYPH: &str = "\u{25b6}"; // ▶
+
 const REVIEWED_BOX: &str = "\u{25a3}"; // ▣
+
 const UNREVIEWED_BOX: &str = "\u{25a2}"; // ▢
 
 pub(super) fn render_file_list(frame: &mut Frame, app: &mut App, area: Rect) {
@@ -60,7 +63,10 @@ pub(super) fn render_file_list(frame: &mut Frame, app: &mut App, area: Rect) {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("?");
-                depth * 2 + 4 + filename.width()
+                let tag_width = app
+                    .file_attribute_label(file)
+                    .map_or(0, |label| label.width() + 3);
+                depth * 2 + 4 + filename.width() + tag_width
             }
         })
         .max()
@@ -155,6 +161,14 @@ pub(super) fn render_file_list(frame: &mut Frame, app: &mut App, area: Rect) {
                             ));
                         }
                         spans.push(Span::raw(filename.to_string()));
+                        // A revealed generated/vendored file says why it was
+                        // hidden, so the reviewer can skip it knowingly.
+                        if let Some(label) = app.file_attribute_label(file) {
+                            spans.push(Span::styled(
+                                format!(" ({label})"),
+                                Style::default().fg(app.theme.fg_dim),
+                            ));
+                        }
                         Line::from(spans)
                     }
                 }
@@ -279,6 +293,33 @@ fn filter_footer(app: &App) -> Option<Line<'static>> {
             Style::default().fg(theme.fg_secondary),
         ));
     }
+    // Generated/vendored files start hidden, so unlike the reviewed cue this
+    // only appears when the diff actually contains some: an unconditional
+    // cue would be noise in every repo without `.gitattributes` tags.
+    //
+    // One combined cue (`1 generated, 2 vendored hidden`) rather than one per
+    // tag: the panel is narrow and two full cues would truncate.
+    let (generated_hidden, vendored_hidden) = app.hidden_attribute_counts();
+    let parts: Vec<String> = [
+        (generated_hidden, "generated"),
+        (vendored_hidden, "vendored"),
+    ]
+    .into_iter()
+    .filter(|(count, _)| *count > 0)
+    .map(|(count, label)| format!("{count} {label}"))
+    .collect();
+    if !parts.is_empty() {
+        if !spans.is_empty() {
+            spans.push(Span::styled(
+                " \u{00b7} ",
+                Style::default().fg(theme.fg_dim),
+            ));
+        }
+        spans.push(Span::styled(
+            format!("{} hidden", parts.join(", ")),
+            Style::default().fg(theme.fg_secondary),
+        ));
+    }
 
     if spans.is_empty() {
         return None;
@@ -378,7 +419,11 @@ mod tests {
     }
 
     fn draw(app: &mut App) -> Buffer {
-        let backend = TestBackend::new(120, 24);
+        draw_with_width(app, 120)
+    }
+
+    fn draw_with_width(app: &mut App, width: u16) -> Buffer {
+        let backend = TestBackend::new(width, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
             .draw(|frame| crate::ui::render(frame, app))
@@ -550,6 +595,84 @@ mod tests {
         assert!(
             !text.contains("reviewed hidden"),
             "default state should not advertise hiding, got:\n{text}"
+        );
+    }
+
+    /// Give the app a repo root whose `.gitattributes` is `contents`, and
+    /// re-derive the tags the way a diff load would.
+    fn with_gitattributes(app: &mut App, contents: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join(".gitattributes"), contents).expect("write");
+        app.local_repo_root = Some(dir.path().to_path_buf());
+        app.invalidate_file_attributes();
+        app.rebuild_annotations();
+        dir
+    }
+
+    #[test]
+    fn should_announce_hidden_generated_files_in_the_border() {
+        let mut app = app_with(&["src/main.rs", "Cargo.lock"]);
+        let _dir = with_gitattributes(&mut app, "*.lock linguist-generated\n");
+
+        let text = buffer_text(&draw(&mut app));
+
+        assert!(
+            text.contains("1 generated hidden"),
+            "expected the hidden-tag cue in the tree border, got:\n{text}"
+        );
+        assert!(
+            !text.contains("Cargo.lock"),
+            "the tagged file should be absent from the tree and the diff title, got:\n{text}"
+        );
+    }
+
+    #[test]
+    fn should_combine_generated_and_vendored_counts_into_one_cue() {
+        let mut app = app_with(&["src/main.rs", "Cargo.lock", "vendor/a.js", "vendor/b.js"]);
+        let _dir = with_gitattributes(
+            &mut app,
+            "*.lock linguist-generated\nvendor/** linguist-vendored\n",
+        );
+
+        // The default 120-column tree is too narrow for the combined cue;
+        // that truncation is the reason it is one cue and not two.
+        let text = buffer_text(&draw_with_width(&mut app, 200));
+
+        assert!(
+            text.contains("1 generated, 2 vendored hidden"),
+            "expected one combined cue in the tree border, got:\n{text}"
+        );
+    }
+
+    #[test]
+    fn should_tag_revealed_generated_files_in_the_tree() {
+        let mut app = app_with(&["src/main.rs", "Cargo.lock"]);
+        let _dir = with_gitattributes(&mut app, "*.lock linguist-generated\n");
+
+        app.set_show_generated(true);
+
+        // Wide enough that the 24-column default tree does not clip the tag.
+        let text = buffer_text(&draw_with_width(&mut app, 200));
+        assert!(
+            text.contains("Cargo.lock (generated)"),
+            "expected the revealed file to carry its tag, got:\n{text}"
+        );
+        assert!(
+            !text.contains("generated hidden"),
+            "nothing is hidden once revealed, got:\n{text}"
+        );
+    }
+
+    #[test]
+    fn should_stay_quiet_when_no_file_carries_a_tag() {
+        let mut app = app_with(&["src/main.rs"]);
+        let _dir = with_gitattributes(&mut app, "*.lock linguist-generated\n");
+
+        let text = buffer_text(&draw(&mut app));
+
+        assert!(
+            !text.contains("hidden"),
+            "no cue without tagged files, got:\n{text}"
         );
     }
 }

@@ -57,6 +57,9 @@ impl App {
     /// - Comments are added/removed
     /// - Diff view mode changes
     pub fn rebuild_annotations(&mut self) {
+        // Every diff load ends here, so this is the one place that keeps the
+        // `.gitattributes` tags in step with `diff_files`.
+        self.ensure_file_attributes();
         if self.file_line_count_cache.is_empty() {
             self.populate_file_line_count_cache();
         }

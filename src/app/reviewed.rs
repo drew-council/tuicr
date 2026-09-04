@@ -534,7 +534,7 @@ impl App {
     /// denominator of the tree title's `reviewed/total` fraction, which has to
     /// keep reporting progress while reviewed rows are hidden.
     pub fn file_count(&self) -> usize {
-        if !self.file_filter_active() {
+        if !self.file_filter_active() && !self.attribute_hiding_active() {
             return self.diff_files.len();
         }
         self.diff_files
@@ -552,7 +552,7 @@ impl App {
     /// Reviewed files within the population `file_count()` reports, so the two
     /// always form a coherent fraction.
     pub fn reviewed_count(&self) -> usize {
-        if !self.file_filter_active() {
+        if !self.file_filter_active() && !self.attribute_hiding_active() {
             return self.session.reviewed_count();
         }
         // Counting the whole session here would read as `12/5` next to a
