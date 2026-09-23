@@ -6,6 +6,7 @@
 //! char-col), both UTF-8 aware.
 
 use crossterm::event::{Event, KeyEvent};
+use edtui::actions::{Execute, InsertChar, LineBreak};
 use edtui::{EditorEventHandler, EditorMode, EditorState, Index2, Lines};
 
 /// Active modal editor for the comment box. Present only while in comment mode
@@ -53,8 +54,24 @@ impl CommentVimEditor {
     }
 
     /// Feed a bracketed-paste payload, returning the synced `(text, byte_cursor)`.
+    ///
+    /// In Insert mode the text goes in at the cursor, as if typed. edtui's own
+    /// paste handler runs its Normal-mode `p` (append after the cursor char)
+    /// even in Insert mode, which lands the text one char off the insert-mode
+    /// cursor. Normal and Visual modes keep edtui's `p` / replace-selection.
     pub fn feed_paste(&mut self, text: String) -> (String, usize) {
-        self.events.on_event(Event::Paste(text), &mut self.state);
+        if self.state.mode == EditorMode::Insert {
+            let text = text.replace("\r\n", "\n").replace('\r', "\n");
+            for ch in text.chars() {
+                if ch == '\n' {
+                    LineBreak(1).execute(&mut self.state);
+                } else {
+                    InsertChar(ch).execute(&mut self.state);
+                }
+            }
+        } else {
+            self.events.on_event(Event::Paste(text), &mut self.state);
+        }
         self.text_and_cursor()
     }
 
@@ -155,6 +172,43 @@ mod tests {
         editor.feed_key(key('d'));
         let (text, _) = editor.feed_key(key('d'));
         assert_eq!(text, "line2");
+    }
+
+    #[test]
+    fn insert_mode_paste_lands_at_cursor() {
+        for (seed, cursor, expected) in [
+            ("abc", 0, ("XYabc", 2)),
+            ("abc", 1, ("aXYbc", 3)),
+            ("abc", 3, ("abcXY", 5)),
+            ("", 0, ("XY", 2)),
+        ] {
+            let mut editor = CommentVimEditor::from_buffer(seed, cursor);
+            let got = editor.feed_paste("XY".to_string());
+            assert_eq!(
+                got,
+                (expected.0.to_string(), expected.1),
+                "{seed:?}@{cursor}"
+            );
+        }
+    }
+
+    #[test]
+    fn insert_mode_multiline_paste_normalizes_crlf() {
+        let mut editor = CommentVimEditor::from_buffer("ab", 1);
+        let (text, cursor) = editor.feed_paste("1\r\n2".to_string());
+        assert_eq!(text, "a1\n2b");
+        assert_eq!(cursor, 4);
+        // Typing continues from the end of the pasted text.
+        let (text, _) = editor.feed_key(key('!'));
+        assert_eq!(text, "a1\n2!b");
+    }
+
+    #[test]
+    fn normal_mode_paste_goes_after_cursor_char() {
+        let mut editor = CommentVimEditor::from_buffer("abc", 0);
+        editor.feed_key(special(KeyCode::Esc));
+        let (text, _) = editor.feed_paste("XY".to_string());
+        assert_eq!(text, "aXYbc");
     }
 
     fn roundtrip(text: &str, byte: usize) {
