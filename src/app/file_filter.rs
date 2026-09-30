@@ -171,6 +171,15 @@ impl App {
         self.file_attributes_stale = true;
     }
 
+    /// Point `.gitattributes` resolution at `root` and re-derive the tags.
+    /// PR startup records the root only after `build` has already cached
+    /// tags for the same file set, and that cache would otherwise stick.
+    pub(crate) fn set_local_repo_root(&mut self, root: Option<PathBuf>) {
+        self.local_repo_root = root;
+        self.invalidate_file_attributes();
+        self.rebuild_annotations();
+    }
+
     pub fn show_generated(&self) -> bool {
         self.file_filter.show_generated
     }
