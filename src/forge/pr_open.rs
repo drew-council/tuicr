@@ -15,10 +15,12 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{Result, TuicrError};
+use crate::forge::attributes::fetch_pr_attributes;
 use crate::forge::traits::{
     ForgeBackend, PrSessionKey, PullRequestCommit, PullRequestDetails, PullRequestInfo,
     PullRequestReviewMetadata, PullRequestTarget,
 };
+use crate::gitattributes::AttributesSnapshot;
 use crate::model::{DiffFile, FilePatch, ReviewSession, SessionDiffSource};
 use crate::syntax::SyntaxHighlighter;
 use crate::tuicrignore;
@@ -40,6 +42,15 @@ pub struct OpenedPullRequest {
     pub review_metadata: PullRequestReviewMetadata,
     /// Extended PR metadata for the description panel.
     pub pr_info: PullRequestInfo,
+    /// `.gitattributes` at the PR's head, for tagging generated and vendored
+    /// files. Empty until [`OpenedPullRequest::with_attributes`] supplies it.
+    pub attributes: AttributesSnapshot,
+}
+
+impl OpenedPullRequest {
+    pub fn with_attributes(self, attributes: AttributesSnapshot) -> Self {
+        Self { attributes, ..self }
+    }
 }
 
 /// Send-safe data fetched before the main thread materializes diff hunks.
@@ -49,6 +60,7 @@ pub type PrFetchData = (
     Vec<PullRequestCommit>,
     PullRequestReviewMetadata,
     PullRequestInfo,
+    AttributesSnapshot,
 );
 
 /// Open a PR target through a forge backend and prepare review state.
@@ -62,7 +74,8 @@ pub fn open_pull_request(
     local_checkout: Option<&Path>,
     highlighter: &SyntaxHighlighter,
 ) -> Result<OpenedPullRequest> {
-    let (details, patches, commits, review_metadata, pr_info) = fetch_pr_data(backend, target)?;
+    let (details, patches, commits, review_metadata, pr_info, attributes) =
+        fetch_pr_data(backend, target)?;
     prepare_open_pr(
         details,
         patches,
@@ -72,11 +85,13 @@ pub fn open_pull_request(
         local_checkout,
         highlighter,
     )
+    .map(|opened| opened.with_attributes(attributes))
 }
 
 /// Network-only half of the PR open path: fetch PR metadata, structured file
-/// patches, and the commit list. Safe to run on a background thread
-/// because it does no syntax parsing and holds nothing that isn't `Send`.
+/// patches, the commit list, and the head's `.gitattributes`. Safe to run on
+/// a background thread because it does no syntax parsing and holds nothing
+/// that isn't `Send`.
 ///
 /// The commit list is best-effort: if the forge fails on that endpoint
 /// only, we still return the diff so PR review proceeds without the
@@ -91,7 +106,15 @@ pub fn fetch_pr_data(backend: &dyn ForgeBackend, target: PullRequestTarget) -> R
     let review_metadata = backend
         .list_pull_request_review_metadata(&details)
         .unwrap_or_default();
-    Ok((details, patches, commits, review_metadata, pr_info))
+    let attributes = fetch_pr_attributes(backend, &details, &patches);
+    Ok((
+        details,
+        patches,
+        commits,
+        review_metadata,
+        pr_info,
+        attributes,
+    ))
 }
 
 /// CPU-only half of the PR open path: apply `.tuicrignore` to the raw
@@ -144,6 +167,7 @@ pub fn prepare_open_pr(
         commits,
         review_metadata,
         pr_info,
+        attributes: AttributesSnapshot::default(),
     })
 }
 

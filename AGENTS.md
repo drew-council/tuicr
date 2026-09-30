@@ -62,6 +62,7 @@ src/
 │   ├── selector.rs      # Review target selector state (Local | Pull Requests tabs)
 │   ├── context.rs       # Remote context expansion via ForgeBackend::fetch_file_lines
 │   ├── local_git.rs     # Shared `git show <sha>:<path>` blob read for all backends
+│   ├── attributes.rs    # `.gitattributes` snapshot at the PR head (local clone, else forge)
 │   ├── remote_comments.rs # RemoteReviewThread shape + visibility filter
 │   ├── submit.rs        # Submit pipeline: preflight mapping, resolver actions,
 │   │                    # InlineComment payload, build_review_body, SubmitEvent
@@ -182,8 +183,11 @@ Repository-managed agent integrations:
 - `App::ensure_file_attributes()` runs at the top of `rebuild_annotations()` and recomputes
   only when the display-path sequence differs from the last run or
   `invalidate_file_attributes()` was called (`:e` does this). Every diff load already ends in
-  `rebuild_annotations`, so the many `self.diff_files = ...` sites need no extra call. It reads
-  from `local_repo_root`, so PR mode uses the local checkout's attributes like `.tuicrignore`.
+  `rebuild_annotations`, so the many `self.diff_files = ...` sites need no extra call. Local
+  reviews read the working tree at `local_repo_root`. PR mode never does: the checkout can be on
+  any branch, so `forge::attributes::fetch_pr_attributes` captures an `AttributesSnapshot` at the
+  PR head inside `fetch_pr_data` (off the main thread), and `ensure_file_attributes` classifies
+  against `App::pr_attributes`. See forge gotcha 23.
 - Marking a file reviewed while hiding deletes the row the cursor sits on, so
   `toggle_reviewed_for_file_idx` calls `advance_past_hidden_file()` to land on the next
   visible file (wrapping, then parking at the overview once the queue empties). It runs
@@ -370,6 +374,8 @@ These are non-obvious things the implementation chain hit. Worth preserving for 
 
 22. **GitHub refuses to render diffs past 300 files.** `gh pr diff` fails with HTTP 406 "diff exceeded the maximum number of files (300)", so the patch half of `get_pull_request_diff` caps out long before the metadata half does (`pull_request_file_metadata` paginates to 3000). It therefore tries local git first: when a matching local checkout contains both `baseRefOid` and `headRefOid`, it runs three-dot `git diff base...head` (GitHub renders PR diffs from the merge base, so three-dot — not two-dot — matches). When the fast path can't run and GitHub 406s, the error is annotated with the `git fetch origin <base> pull/<N>/head` hint. GitLab needs none of this: its `get_pull_request_diff` reads the paginated `/diffs` endpoint, which has no comparable cap.
 
+
+23. **PR `.gitattributes` come from the PR head, never the working tree.** `forge::attributes::fetch_pr_attributes` lists the files that exist at `head_sha` with one `git --literal-pathspecs ls-tree --full-tree` over each changed path's ancestor directories (`--full-tree` because `local_checkout_path()` is the launch directory, which can be a subdirectory), then reads them with `read_blob`. When the clone lacks the head it asks the forge for the root file only: probing every directory would cost a round trip apiece. `.git/info/attributes` still applies, via `git rev-parse --git-path`, because it is per-clone config rather than part of a revision. `set_pr_attributes` invalidates the tag cache, since a same-head reload keeps the file set and the path fingerprint alone would keep stale tags, and the cache also records whether it came from a PR so leaving PR mode for the same files re-reads the working tree.
 
 ### Keeping Docs Updated
 

@@ -128,6 +128,10 @@ dist/**           linguist-generated
 third_party/**    linguist-vendored
 ```
 
+In pull-request review the files come from the PR's head commit rather than
+your working tree. Without that commit in the local clone, only the root
+`.gitattributes` is fetched from the forge.
+
 To drop a file from the review entirely rather than hide it, use
 [`.tuicrignore`](CONFIG.md#tuicrignore) instead. `:e` re-reads the attribute
 files.

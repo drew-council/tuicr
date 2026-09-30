@@ -356,6 +356,8 @@ Unlike `.tuicrignore`, this is a view: the files are still loaded, still hold co
 
 Resolution follows git. The root `.gitattributes`, any nested `.gitattributes` between the root and the file, and the uncommitted `.git/info/attributes` are read; the closest file wins, the last matching line within a file wins, and `-attr`, `!attr`, or `attr=false` unset a tag. Patterns use gitignore syntax without negation, and a pattern that matches a directory does not cover its contents — write `dir/**`. `:e` re-reads the files.
 
+A pull request is tagged by the `.gitattributes` at its head commit, not by the local working tree, which can be on any branch. tuicr reads them from the local clone when it holds that commit, and otherwise asks the forge for the root `.gitattributes` only, so nested files are skipped in that case. The clone's `.git/info/attributes` still applies.
+
 Example:
 
 ```gitattributes

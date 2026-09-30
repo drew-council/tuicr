@@ -12,7 +12,7 @@ use crate::error::{Result, TuicrError};
 use crate::forge::context::{ContextProvider, ForgeContextProvider, VcsContextProvider};
 use crate::forge::selector::PullRequestsTab;
 use crate::forge::traits::{ForgeBackend, ForgeRepository};
-use crate::gitattributes::FileAttributes;
+use crate::gitattributes::{AttributesSnapshot, FileAttributes};
 use crate::model::review::{CommentLocation, FileReview};
 use crate::model::{
     ClearScope, Comment, CommentType, DiffFile, DiffHunk, DiffLine, FileStatus, LineOrigin,
@@ -1179,6 +1179,13 @@ pub struct App {
     /// The display paths `file_attributes` was computed for, in order. A
     /// cheap fingerprint so a rebuild with the same files skips the disk.
     pub(crate) file_attributes_paths: Vec<PathBuf>,
+    /// Whether `file_attributes` came from `pr_attributes` rather than the
+    /// working tree, so leaving PR mode for the same file set re-reads.
+    pub(crate) file_attributes_from_pr: bool,
+    /// `.gitattributes` captured at the open PR's head. PR mode tags files
+    /// from this, never from the local working tree, which can be on any
+    /// branch.
+    pub(crate) pr_attributes: AttributesSnapshot,
     /// Set by `:e` so a changed `.gitattributes` is re-read even when the
     /// fingerprint matches.
     pub(crate) file_attributes_stale: bool,

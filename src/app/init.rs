@@ -502,6 +502,8 @@ impl App {
             theme_picker: ThemePickerState::default(),
             file_attributes: HashMap::new(),
             file_attributes_paths: Vec::new(),
+            file_attributes_from_pr: false,
+            pr_attributes: AttributesSnapshot::default(),
             file_attributes_stale: true,
             command_buffer: String::new(),
             command_completion: None,
@@ -952,6 +954,7 @@ impl App {
         let details_for_threads = opened.details.clone();
         let commits_for_selector = opened.commits.clone();
         let review_metadata = opened.review_metadata.clone();
+        let attributes = opened.attributes;
         let mut app = Self::build(
             vcs,
             vcs_info,
@@ -968,11 +971,15 @@ impl App {
         )?;
         app.show_pr_checks = display_options.show_checks;
         app.show_pr_comments = display_options.show_comments;
+        // `build` has no slot for the head's `.gitattributes` and has already
+        // tagged the files without them.
+        app.set_pr_attributes(attributes);
+        app.rebuild_annotations();
 
         // `build` sees the PR's synthetic root, so record the real launch
         // directory here — PRs opened later from the PR tab resolve their
         // local checkout from it.
-        app.set_local_repo_root(local_repo_root);
+        app.local_repo_root = local_repo_root;
         // Wire the forge backend so context expansion routes through it.
         app.forge_backend = Some(backend);
         app.forge_repository = Some(target_repo);

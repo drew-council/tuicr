@@ -134,18 +134,31 @@ impl App {
                 .filter(|file| !file.is_commit_message)
                 .map(|file| file.display_path())
         };
+        let from_pr = matches!(self.diff_source, DiffSource::PullRequest(_));
         // Compare before allocating: this runs on every rebuild, and most
         // rebuilds (comments, marks, toggles) leave the file set untouched.
-        if !self.file_attributes_stale && current().eq(self.file_attributes_paths.iter()) {
+        if !self.file_attributes_stale
+            && self.file_attributes_from_pr == from_pr
+            && current().eq(self.file_attributes_paths.iter())
+        {
             return;
         }
         let paths: Vec<PathBuf> = current().cloned().collect();
+        let lookups = paths.iter().map(PathBuf::as_path);
         self.file_attributes_stale = false;
-        self.file_attributes = match self.local_repo_root.as_deref() {
-            Some(root) => GitAttributes::classify(root, paths.iter().map(PathBuf::as_path)),
-            None => HashMap::new(),
+        // A PR is tagged by the attributes at its head. The launch directory
+        // is some local checkout on some branch, so reading it would tag the
+        // PR by whatever that branch says.
+        self.file_attributes = if from_pr {
+            GitAttributes::from_snapshot(&self.pr_attributes).classify(lookups)
+        } else {
+            match self.local_repo_root.as_deref() {
+                Some(root) => GitAttributes::open(root).classify(lookups),
+                None => HashMap::new(),
+            }
         };
         self.file_attributes_paths = paths;
+        self.file_attributes_from_pr = from_pr;
 
         // Loads reset `current_file_idx` to 0 before rebuilding. If that file
         // just turned out to be hidden, the diff title (and single-file view,
@@ -171,13 +184,12 @@ impl App {
         self.file_attributes_stale = true;
     }
 
-    /// Point `.gitattributes` resolution at `root` and re-derive the tags.
-    /// PR startup records the root only after `build` has already cached
-    /// tags for the same file set, and that cache would otherwise stick.
-    pub(crate) fn set_local_repo_root(&mut self, root: Option<PathBuf>) {
-        self.local_repo_root = root;
+    /// Replace the PR head's `.gitattributes`. Callers rebuild afterwards;
+    /// the file set may not change (a reload at a new head touching the same
+    /// paths), so the fingerprint alone would keep the old tags.
+    pub(crate) fn set_pr_attributes(&mut self, attributes: AttributesSnapshot) {
+        self.pr_attributes = attributes;
         self.invalidate_file_attributes();
-        self.rebuild_annotations();
     }
 
     pub fn show_generated(&self) -> bool {

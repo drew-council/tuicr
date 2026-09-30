@@ -16,6 +16,7 @@ impl App {
             commits,
             review_metadata,
             pr_info,
+            attributes,
         } = opened;
 
         // Save the current session before transitioning so local-mode work
@@ -61,6 +62,7 @@ impl App {
         self.saved_inline_selection = None;
         self.diff_state = DiffState::default();
         self.pr_info = Some(pr_info);
+        self.set_pr_attributes(attributes);
 
         // PR mode populates the inline selector with the PR's commits when
         // there are at least two. Single-commit PRs hide the selector to
@@ -556,15 +558,8 @@ impl App {
             return;
         }
         match result {
-            Ok((details, patches, commits, review_metadata, pr_info)) => {
-                if let Err(e) = self.finish_pr_reload(
-                    details,
-                    patches,
-                    commits,
-                    review_metadata,
-                    pr_info,
-                    &request,
-                ) {
+            Ok(data) => {
+                if let Err(e) = self.finish_pr_reload(data, &request) {
                     self.set_error(format!("Reload failed: {e}"));
                 }
             }
@@ -576,14 +571,12 @@ impl App {
 
     pub(in crate::app) fn finish_pr_reload(
         &mut self,
-        details: crate::forge::traits::PullRequestDetails,
-        patches: Vec<crate::model::FilePatch>,
-        commits: Vec<crate::forge::traits::PullRequestCommit>,
-        review_metadata: crate::forge::traits::PullRequestReviewMetadata,
-        pr_info: crate::forge::traits::PullRequestInfo,
+        data: crate::forge::pr_open::PrFetchData,
         request: &PrReloadRequest,
     ) -> Result<()> {
         use crate::forge::pr_open::prepare_open_pr;
+
+        let (details, patches, commits, review_metadata, pr_info, attributes) = data;
 
         let local_checkout = self
             .forge_backend
@@ -598,7 +591,8 @@ impl App {
             pr_info,
             local_checkout.as_deref(),
             highlighter,
-        )?;
+        )?
+        .with_attributes(attributes);
 
         let head_changed = opened.details.head_sha != request.head_sha;
         if head_changed {
@@ -623,6 +617,7 @@ impl App {
             );
             self.diff_files = opened.diff_files;
             self.pr_info = Some(opened.pr_info);
+            self.set_pr_attributes(opened.attributes);
             self.clear_expanded_gaps();
             for file in &self.diff_files {
                 self.session.add_diff_file(file);
@@ -720,6 +715,7 @@ impl App {
             );
             self.diff_files = opened.diff_files;
             self.pr_info = Some(opened.pr_info);
+            self.set_pr_attributes(opened.attributes);
             self.clear_expanded_gaps();
             for file in &self.diff_files {
                 self.session.add_diff_file(file);
@@ -1004,15 +1000,8 @@ impl App {
                     return;
                 }
                 match result {
-                    Ok((details, patches, commits, review_metadata, pr_info)) => {
-                        if let Err(e) = self.finish_pr_open(
-                            details,
-                            patches,
-                            commits,
-                            review_metadata,
-                            pr_info,
-                            &request,
-                        ) {
+                    Ok(data) => {
+                        if let Err(e) = self.finish_pr_open(data, &request) {
                             self.set_error(format!(
                                 "Failed to open PR #{}: {}",
                                 request.pr_number, e
@@ -1033,14 +1022,12 @@ impl App {
     /// happened on the background thread.
     fn finish_pr_open(
         &mut self,
-        details: crate::forge::traits::PullRequestDetails,
-        patches: Vec<crate::model::FilePatch>,
-        commits: Vec<crate::forge::traits::PullRequestCommit>,
-        review_metadata: crate::forge::traits::PullRequestReviewMetadata,
-        pr_info: crate::forge::traits::PullRequestInfo,
+        data: crate::forge::pr_open::PrFetchData,
         request: &PrOpenRequest,
     ) -> Result<()> {
         use crate::forge::pr_open::prepare_open_pr;
+
+        let (details, patches, commits, review_metadata, pr_info, attributes) = data;
 
         let local_checkout = self.local_checkout_for(&request.repository);
         let highlighter = self.theme.syntax_highlighter();
@@ -1052,7 +1039,8 @@ impl App {
             pr_info,
             local_checkout.as_deref(),
             highlighter,
-        )?;
+        )?
+        .with_attributes(attributes);
         self.seed_configured_visibility(&mut opened.session);
         let opened = Self::opened_pr_with_persisted_session(opened)?;
         let backend = create_forge_backend(

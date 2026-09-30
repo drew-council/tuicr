@@ -899,24 +899,40 @@ fn pr_app_with(paths: &[&str]) -> App {
     app
 }
 
+fn head_attributes(contents: &str) -> crate::gitattributes::AttributesSnapshot {
+    crate::gitattributes::AttributesSnapshot {
+        files: HashMap::from([(PathBuf::new(), contents.to_string())]),
+        info: None,
+    }
+}
+
 #[test]
-fn should_classify_pr_files_once_the_launch_root_is_recorded() {
-    // given a PR app whose tags were cached before it had a root
+fn should_tag_pr_files_from_the_head_not_the_launch_directory() {
+    // given a PR app launched from a checkout whose own branch tags `*.rs`
     let mut app = pr_app_with(&["api/foo.pb.go", "src/main.rs"]);
-    assert!(app.local_repo_root.is_none());
-    let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(
-        dir.path().join(".gitattributes"),
-        "*.pb.go -diff -merge linguist-generated=true\n",
-    )
-    .expect("write .gitattributes");
+    let _dir = with_gitattributes(&mut app, "*.rs linguist-generated\n");
+    assert_eq!(app.hidden_attribute_counts(), (0, 0));
 
-    // when PR startup records the launch directory
-    app.set_local_repo_root(Some(dir.path().to_path_buf()));
+    // when the PR head's attributes arrive
+    app.set_pr_attributes(head_attributes("*.pb.go linguist-generated\n"));
+    app.rebuild_annotations();
 
-    // then the generated file is tagged and hidden
+    // then the head decides, and the launch directory is not consulted
     assert_eq!(app.hidden_attribute_counts(), (1, 0));
     assert_eq!(visible_paths(&app), vec!["src/main.rs"]);
+}
+
+#[test]
+fn should_reread_the_working_tree_when_leaving_pr_mode_for_the_same_files() {
+    let mut app = pr_app_with(&["api/foo.pb.go", "src/main.rs"]);
+    let _dir = with_gitattributes(&mut app, "*.rs linguist-generated\n");
+    app.set_pr_attributes(head_attributes("*.pb.go linguist-generated\n"));
+    app.rebuild_annotations();
+
+    app.diff_source = DiffSource::WorkingTree;
+    app.rebuild_annotations();
+
+    assert_eq!(visible_paths(&app), vec!["api/foo.pb.go"]);
 }
 
 #[test]
