@@ -5,6 +5,7 @@
 //! instead of shelling out to forge-specific tools directly.
 #![allow(dead_code)]
 
+pub mod attributes;
 pub mod azure;
 pub mod bitbucket;
 pub mod canonical;

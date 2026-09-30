@@ -19,6 +19,12 @@
 //! Nested files are loaded lazily per directory: only the ancestors of the
 //! paths actually asked about are probed, so a large tree costs a handful of
 //! `stat` calls rather than a walk.
+//!
+//! The files come from one of two places. A local review reads the working
+//! tree, since that is what it shows. A pull request reads an
+//! [`AttributesSnapshot`] captured at the PR's head, because the checkout on
+//! disk can be on any branch and its `.gitattributes` says nothing about the
+//! revision under review.
 
 use std::collections::HashMap;
 use std::fs;
@@ -54,6 +60,19 @@ enum AttrState {
     Unset,
 }
 
+/// `.gitattributes` files read from one revision instead of a working tree.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AttributesSnapshot {
+    /// File contents keyed by the directory holding each file, relative to
+    /// the repository root (`""` for the root). Directories without a file
+    /// are absent.
+    pub files: HashMap<PathBuf, String>,
+    /// The local clone's `.git/info/attributes`. It is per-clone
+    /// configuration rather than part of any revision, so it applies to
+    /// whichever revision the files came from.
+    pub info: Option<String>,
+}
+
 /// One attributes file, compiled into a matcher per tracked attribute.
 struct Layer {
     /// Directory the file's patterns are relative to, as a path relative to
@@ -64,15 +83,13 @@ struct Layer {
 }
 
 impl Layer {
-    fn load(repo_root: &Path, dir: &Path, file: &Path) -> Option<Self> {
-        let contents = fs::read_to_string(file).ok()?;
-        Self::parse(repo_root, dir, &contents)
-    }
-
-    fn parse(repo_root: &Path, dir: &Path, contents: &str) -> Option<Self> {
+    fn parse(dir: &Path, contents: &str) -> Option<Self> {
+        // Lookups always pass a path already relative to `dir`, so the
+        // matcher needs no filesystem root. `.` is the one root the `ignore`
+        // crate never strips a prefix against.
         let mut builders: Vec<(&'static str, GitignoreBuilder)> = TRACKED_ATTRS
             .iter()
-            .map(|name| (*name, GitignoreBuilder::new(repo_root.join(dir))))
+            .map(|name| (*name, GitignoreBuilder::new(".")))
             .collect();
         let mut any_line = false;
 
@@ -186,9 +203,26 @@ fn split_pattern(line: &str) -> Option<(String, &str)> {
     Some((line[..end].to_string(), &line[end..]))
 }
 
+/// Where the per-directory `.gitattributes` files are read from.
+enum Source<'a> {
+    Worktree(PathBuf),
+    Snapshot(&'a HashMap<PathBuf, String>),
+}
+
+impl Source<'_> {
+    fn read(&self, dir: &Path) -> Option<String> {
+        match self {
+            Source::Worktree(root) => {
+                fs::read_to_string(root.join(dir).join(".gitattributes")).ok()
+            }
+            Source::Snapshot(files) => files.get(dir).cloned(),
+        }
+    }
+}
+
 /// Lazily loaded attribute layers for one repository.
-pub struct GitAttributes {
-    repo_root: PathBuf,
+pub struct GitAttributes<'a> {
+    source: Source<'a>,
     /// `.git/info/attributes`, highest precedence and never committed.
     info: Option<Layer>,
     /// Per-directory `.gitattributes`, keyed by directory relative to the
@@ -197,13 +231,26 @@ pub struct GitAttributes {
     dirs: HashMap<PathBuf, Option<Layer>>,
 }
 
-impl GitAttributes {
+impl<'a> GitAttributes<'a> {
+    /// Read attributes from the working tree at `repo_root`.
     pub fn open(repo_root: &Path) -> Self {
-        let info = info_attributes_path(repo_root)
-            .filter(|path| path.is_file())
-            .and_then(|path| Layer::load(repo_root, Path::new(""), &path));
+        let info = read_info_attributes(repo_root)
+            .and_then(|contents| Layer::parse(Path::new(""), &contents));
         Self {
-            repo_root: repo_root.to_path_buf(),
+            source: Source::Worktree(repo_root.to_path_buf()),
+            info,
+            dirs: HashMap::new(),
+        }
+    }
+
+    /// Read attributes from files captured at one revision.
+    pub fn from_snapshot(snapshot: &'a AttributesSnapshot) -> Self {
+        let info = snapshot
+            .info
+            .as_deref()
+            .and_then(|contents| Layer::parse(Path::new(""), contents));
+        Self {
+            source: Source::Snapshot(&snapshot.files),
             info,
             dirs: HashMap::new(),
         }
@@ -218,15 +265,14 @@ impl GitAttributes {
     }
 
     /// Resolve every path and keep only the ones that carry an attribute.
-    pub fn classify<'a>(
-        repo_root: &Path,
-        paths: impl IntoIterator<Item = &'a Path>,
+    pub fn classify<'p>(
+        &mut self,
+        paths: impl IntoIterator<Item = &'p Path>,
     ) -> HashMap<PathBuf, FileAttributes> {
-        let mut attrs = Self::open(repo_root);
         paths
             .into_iter()
             .filter_map(|path| {
-                let resolved = attrs.lookup(path);
+                let resolved = self.lookup(path);
                 resolved.any().then(|| (path.to_path_buf(), resolved))
             })
             .collect()
@@ -267,16 +313,20 @@ impl GitAttributes {
 
     fn layer_for(&mut self, dir: &Path) -> Option<&Layer> {
         if !self.dirs.contains_key(dir) {
-            let file = self.repo_root.join(dir).join(".gitattributes");
-            let layer = if file.is_file() {
-                Layer::load(&self.repo_root, dir, &file)
-            } else {
-                None
-            };
+            let layer = self
+                .source
+                .read(dir)
+                .and_then(|contents| Layer::parse(dir, &contents));
             self.dirs.insert(dir.to_path_buf(), layer);
         }
         self.dirs.get(dir).and_then(Option::as_ref)
     }
+}
+
+/// The contents of `.git/info/attributes` for the clone at `repo_root`.
+fn read_info_attributes(repo_root: &Path) -> Option<String> {
+    let path = info_attributes_path(repo_root)?;
+    fs::read_to_string(path).ok()
 }
 
 /// `.git/info/attributes`, following a `gitdir:` pointer when `.git` is a
@@ -490,9 +540,47 @@ mod tests {
         write(dir.path(), ".gitattributes", "*.lock linguist-generated\n");
         let paths = [Path::new("Cargo.lock"), Path::new("src/main.rs")];
 
-        let tagged = GitAttributes::classify(dir.path(), paths);
+        let tagged = GitAttributes::open(dir.path()).classify(paths);
 
         assert_eq!(tagged.len(), 1);
         assert!(tagged[Path::new("Cargo.lock")].generated);
+    }
+
+    fn snapshot(files: &[(&str, &str)], info: Option<&str>) -> AttributesSnapshot {
+        AttributesSnapshot {
+            files: files
+                .iter()
+                .map(|(dir, contents)| (PathBuf::from(dir), contents.to_string()))
+                .collect(),
+            info: info.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn should_resolve_from_a_snapshot_with_nested_files_and_info() {
+        let snapshot = snapshot(
+            &[
+                ("", "*.pb.go -diff linguist-generated=true\n"),
+                ("web", "*.js linguist-vendored\n"),
+            ],
+            Some("keep.pb.go -linguist-generated\n"),
+        );
+        let mut attrs = GitAttributes::from_snapshot(&snapshot);
+
+        assert!(attrs.lookup(Path::new("api/v1/a.pb.go")).generated);
+        assert!(!attrs.lookup(Path::new("api/keep.pb.go")).generated);
+        assert!(attrs.lookup(Path::new("web/app.js")).vendored);
+        assert!(!attrs.lookup(Path::new("lib/app.js")).vendored);
+    }
+
+    #[test]
+    fn should_not_strip_a_nested_directory_name_from_the_path_it_matches() {
+        // `api/.gitattributes` sees `api/api/x.go` as `api/x.go`. A matcher
+        // rooted at `api` would strip that second `api` too and miss.
+        let snapshot = snapshot(&[("api", "api/*.go linguist-generated\n")], None);
+        let mut attrs = GitAttributes::from_snapshot(&snapshot);
+
+        assert!(attrs.lookup(Path::new("api/api/x.go")).generated);
+        assert!(!attrs.lookup(Path::new("api/x.go")).generated);
     }
 }
