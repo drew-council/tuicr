@@ -847,6 +847,78 @@ fn should_pick_up_tags_when_the_file_set_changes() {
     assert_eq!(visible_paths(&app), vec!["src/main.rs"]);
 }
 
+/// A PR-mode app as `App::build` leaves it: the synthetic `forge:` root means
+/// no `local_repo_root`, and `build` has already cached tags without one.
+fn pr_app_with(paths: &[&str]) -> App {
+    use crate::forge::traits::{ForgeRepository, PrSessionKey};
+
+    let pr = PullRequestDiffSource {
+        key: PrSessionKey::new(
+            ForgeRepository::github("github.com", "owner", "repo"),
+            42,
+            "head",
+        ),
+        base_sha: "base".to_string(),
+        title: "PR".to_string(),
+        url: "https://github.com/owner/repo/pull/42".to_string(),
+        head_ref_name: "feature".to_string(),
+        base_ref_name: "main".to_string(),
+        state: "OPEN".to_string(),
+        closed: false,
+        merged: false,
+    };
+    let vcs_info = VcsInfo {
+        root_path: PathBuf::from("forge:github.com/owner/repo"),
+        head_commit: pr.key.head_sha.clone(),
+        branch_name: Some(pr.head_ref_name.clone()),
+        vcs_type: VcsType::File,
+    };
+    let mut session = ReviewSession::new(
+        vcs_info.root_path.clone(),
+        vcs_info.head_commit.clone(),
+        vcs_info.branch_name.clone(),
+        SessionDiffSource::PullRequest,
+    );
+    session.pr_session_key = Some(pr.key.clone());
+    let mut app = App::build(
+        Box::new(StubVcs(vcs_info.clone())),
+        vcs_info,
+        crate::theme::Theme::dark(),
+        None,
+        false,
+        paths.iter().map(|p| file(p)).collect(),
+        session,
+        DiffSource::PullRequest(Box::new(pr)),
+        InputMode::Normal,
+        Vec::new(),
+        None,
+        None,
+    )
+    .expect("build pr app");
+    app.expand_all_dirs();
+    app
+}
+
+#[test]
+fn should_classify_pr_files_once_the_launch_root_is_recorded() {
+    // given a PR app whose tags were cached before it had a root
+    let mut app = pr_app_with(&["api/foo.pb.go", "src/main.rs"]);
+    assert!(app.local_repo_root.is_none());
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join(".gitattributes"),
+        "*.pb.go -diff -merge linguist-generated=true\n",
+    )
+    .expect("write .gitattributes");
+
+    // when PR startup records the launch directory
+    app.set_local_repo_root(Some(dir.path().to_path_buf()));
+
+    // then the generated file is tagged and hidden
+    assert_eq!(app.hidden_attribute_counts(), (1, 0));
+    assert_eq!(visible_paths(&app), vec!["src/main.rs"]);
+}
+
 #[test]
 fn should_leave_files_alone_without_a_local_repo_root() {
     let mut app = app_with(&["Cargo.lock", "src/main.rs"]);

@@ -972,7 +972,7 @@ impl App {
         // `build` sees the PR's synthetic root, so record the real launch
         // directory here — PRs opened later from the PR tab resolve their
         // local checkout from it.
-        app.local_repo_root = local_repo_root;
+        app.set_local_repo_root(local_repo_root);
         // Wire the forge backend so context expansion routes through it.
         app.forge_backend = Some(backend);
         app.forge_repository = Some(target_repo);
