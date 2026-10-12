@@ -34,6 +34,11 @@ impl CommentVimEditor {
         self.state.mode == EditorMode::Normal
     }
 
+    /// True when the editor is in Insert mode.
+    pub fn is_insert_mode(&self) -> bool {
+        self.state.mode == EditorMode::Insert
+    }
+
     /// Short status label for the current mode. The catch-all tolerates any
     /// extra edtui modes (e.g. search).
     pub fn label(&self) -> &'static str {

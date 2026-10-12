@@ -1,11 +1,12 @@
 use std::io::{self, Write};
 
 use crossterm::{
+    cursor::SetCursorStyle,
     event::{
         DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
         KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
-    execute,
+    execute, queue,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Frame, Terminal, backend::CrosstermBackend};
@@ -13,6 +14,28 @@ use ratatui::{Frame, Terminal, backend::CrosstermBackend};
 mod keyboard_probe;
 
 pub use keyboard_probe::supports_keyboard_enhancement;
+
+/// Terminal cursor shape, set with DECSCUSR.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CursorShape {
+    /// The user's configured shape.
+    #[default]
+    Default,
+    Block,
+    Bar,
+    Underline,
+}
+
+impl CursorShape {
+    fn command(self) -> SetCursorStyle {
+        match self {
+            Self::Default => SetCursorStyle::DefaultUserShape,
+            Self::Block => SetCursorStyle::SteadyBlock,
+            Self::Bar => SetCursorStyle::SteadyBar,
+            Self::Underline => SetCursorStyle::SteadyUnderScore,
+        }
+    }
+}
 
 /// Terminal capabilities enabled for one tuicr TUI session.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -61,6 +84,7 @@ pub struct TerminalSession<W: Write> {
     terminal: Terminal<CrosstermBackend<W>>,
     features: TerminalFeatures,
     active: bool,
+    cursor_shape: CursorShape,
 }
 
 impl<W: Write> TerminalSession<W> {
@@ -75,6 +99,7 @@ impl<W: Write> TerminalSession<W> {
             terminal,
             features,
             active: true,
+            cursor_shape: CursorShape::Default,
         })
     }
 
@@ -92,6 +117,25 @@ impl<W: Write> TerminalSession<W> {
     /// not manage directly.
     pub fn backend_mut(&mut self) -> &mut CrosstermBackend<W> {
         self.terminal.backend_mut()
+    }
+
+    /// Queues a cursor shape change, written with the next flush. Writes
+    /// nothing when the shape is unchanged.
+    pub fn set_cursor_shape(&mut self, shape: CursorShape) -> std::io::Result<()> {
+        if shape == self.cursor_shape {
+            return Ok(());
+        }
+        queue!(self.terminal.backend_mut(), shape.command())?;
+        self.cursor_shape = shape;
+        Ok(())
+    }
+
+    /// Hands the user's cursor shape back before the terminal leaves TUI mode.
+    fn reset_cursor_shape_best_effort(&mut self) {
+        if self.cursor_shape != CursorShape::Default {
+            let _ = execute!(self.terminal.backend_mut(), CursorShape::Default.command());
+            self.cursor_shape = CursorShape::Default;
+        }
     }
 
     /// Restores the terminal state for the normal exit path.
@@ -134,6 +178,7 @@ impl<W: Write> TerminalSession<W> {
         if !self.active {
             return Ok(());
         }
+        self.reset_cursor_shape_best_effort();
         deactivate_writer(self.terminal.backend_mut(), self.features.mouse_enabled)?;
         self.active = false;
         Ok(())
@@ -164,6 +209,7 @@ impl<W: Write> TerminalSession<W> {
 impl<W: Write> Drop for TerminalSession<W> {
     fn drop(&mut self) {
         if self.active {
+            self.reset_cursor_shape_best_effort();
             deactivate_writer_best_effort(self.terminal.backend_mut(), self.features.mouse_enabled);
             self.active = false;
         }
@@ -212,6 +258,7 @@ impl<W: Write> Drop for TerminalSuspension<'_, W> {
 /// reachable.
 pub fn restore_stdio_best_effort() {
     let mut stdout = io::stdout();
+    let _ = execute!(stdout, CursorShape::Default.command());
     deactivate_writer_best_effort(&mut stdout, true);
 }
 

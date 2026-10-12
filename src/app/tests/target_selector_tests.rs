@@ -85,6 +85,7 @@ fn build_app() -> App {
 fn comment_vim_command_line_q_cancels_w_saves() {
     let mut app = build_app();
     app.comment_vim_enabled = true;
+    app.comment_vim_backend = CommentVimBackend::Builtin;
 
     // `:q` exits the comment box.
     app.enter_review_comment_mode();
@@ -114,6 +115,7 @@ fn comment_vim_command_line_q_cancels_w_saves() {
 fn comment_vim_double_enter_saves() {
     let mut app = build_app();
     app.comment_vim_enabled = true;
+    app.comment_vim_backend = CommentVimBackend::Builtin;
     app.enter_review_comment_mode();
 
     // First Enter arms (header would show the hint); second routes to
@@ -138,6 +140,7 @@ fn comment_vim_double_enter_saves() {
 fn comment_vim_double_esc_cancels() {
     let mut app = build_app();
     app.comment_vim_enabled = true;
+    app.comment_vim_backend = CommentVimBackend::Builtin;
     app.enter_review_comment_mode();
     assert_eq!(app.input_mode, InputMode::Comment);
 
@@ -157,12 +160,35 @@ fn comment_vim_double_esc_cancels() {
 fn comment_vim_soft_tab_inserts_configured_spaces() {
     let mut app = build_app();
     app.comment_vim_enabled = true;
+    app.comment_vim_backend = CommentVimBackend::Builtin;
     app.comment_tab_width = 2;
     app.enter_review_comment_mode();
     app.ensure_comment_vim_editor(); // Insert mode, empty buffer
     app.comment_vim_insert_soft_tab();
     assert_eq!(app.comment_buffer, "  ");
     assert_eq!(app.comment_cursor, 2);
+}
+
+#[test]
+fn comment_vim_builtin_cursor_shape_follows_mode() {
+    use crate::terminal_state::CursorShape;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let mut app = build_app();
+    assert_eq!(app.terminal_cursor_shape(), CursorShape::Default);
+    app.comment_vim_enabled = true;
+    app.comment_vim_backend = CommentVimBackend::Builtin;
+    app.enter_review_comment_mode();
+    app.ensure_comment_vim_editor();
+    assert_eq!(app.terminal_cursor_shape(), CursorShape::Bar);
+    assert!(!app.comment_vim_view().unwrap().block_cursor);
+
+    app.comment_vim_feed_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(app.terminal_cursor_shape(), CursorShape::Block);
+    assert!(app.comment_vim_view().unwrap().block_cursor);
+
+    app.exit_comment_mode();
+    assert_eq!(app.terminal_cursor_shape(), CursorShape::Default);
 }
 
 #[test]
@@ -212,6 +238,7 @@ fn comment_current_line_cursor_targets_the_cursor_line() {
 fn comment_vim_command_backspace_past_colon_closes() {
     let mut app = build_app();
     app.comment_vim_enabled = true;
+    app.comment_vim_backend = CommentVimBackend::Builtin;
     app.enter_review_comment_mode();
     app.start_comment_vim_command();
     app.comment_vim_command_push('q');
@@ -219,6 +246,173 @@ fn comment_vim_command_backspace_past_colon_closes() {
     assert!(app.comment_vim_command_active());
     app.comment_vim_command_backspace(); // past ':' -> closed
     assert!(!app.comment_vim_command_active());
+}
+
+/// Attach a `--clean` Neovim so the comment box runs on the real engine
+/// without the developer's config. False (skip) when nvim is not installed.
+fn attach_clean_nvim(app: &mut App) -> bool {
+    let options = crate::nvim::NvimOptions {
+        args: vec!["--clean".to_string()],
+        ..Default::default()
+    };
+    match crate::nvim::NvimHost::spawn(&options) {
+        Ok(host) => {
+            app.comment_vim_enabled = true;
+            app.comment_nvim = Some(host);
+            true
+        }
+        Err(crate::nvim::NvimError::NotFound(_)) => false,
+        Err(err) => panic!("{err}"),
+    }
+}
+
+/// Type `keys` one key event at a time, as the event loop would, then wait
+/// for any state still in flight (the loop's per-tick poll would apply it).
+fn feed_nvim(app: &mut App, keys: &str) {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    for c in keys.chars() {
+        let code = match c {
+            '\x1b' => KeyCode::Esc,
+            '\r' => KeyCode::Enter,
+            c => KeyCode::Char(c),
+        };
+        app.comment_vim_feed_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+    settle_nvim(app);
+}
+
+fn settle_nvim(app: &mut App) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while app
+        .comment_nvim
+        .as_ref()
+        .is_some_and(|host| host.is_syncing())
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        app.poll_comment_nvim_events();
+    }
+}
+
+#[test]
+fn comment_vim_falls_back_to_builtin_when_nvim_unavailable() {
+    let mut app = build_app();
+    app.comment_vim_enabled = true;
+    app.comment_nvim_unavailable = true;
+    app.enter_review_comment_mode();
+    app.ensure_comment_vim_editor();
+    assert!(!app.comment_vim_uses_nvim());
+    assert!(matches!(
+        app.comment_vim_editor,
+        Some(CommentVimEngine::Builtin(_))
+    ));
+    // The built-in editor keeps its own `q` cancel.
+    app.comment_vim_esc_normal();
+    assert_eq!(
+        app.comment_vim_mode_label(),
+        Some(("Esc/q again to cancel".to_string(), true))
+    );
+}
+
+#[test]
+fn comment_nvim_mirrors_buffer_mode_and_selection() {
+    let mut app = build_app();
+    if !attach_clean_nvim(&mut app) {
+        return;
+    }
+    app.enter_review_comment_mode();
+    app.ensure_comment_vim_editor();
+    settle_nvim(&mut app);
+    assert!(app.comment_vim_uses_nvim());
+
+    feed_nvim(&mut app, "hello world");
+    assert_eq!(app.comment_buffer, "hello world");
+    assert_eq!(app.comment_cursor, 11);
+    assert_eq!(
+        app.terminal_cursor_shape(),
+        crate::terminal_state::CursorShape::Bar
+    );
+    assert_eq!(
+        app.comment_vim_mode_label(),
+        Some(("INSERT".to_string(), false))
+    );
+
+    feed_nvim(&mut app, "\x1b0dw");
+    assert_eq!(app.comment_buffer, "world");
+    assert!(app.comment_vim_in_normal_mode());
+    assert_eq!(
+        app.terminal_cursor_shape(),
+        crate::terminal_state::CursorShape::Block
+    );
+
+    // `q` records a macro rather than arming cancel.
+    feed_nvim(&mut app, "qa");
+    assert_eq!(
+        app.comment_vim_mode_label(),
+        Some(("NORMAL recording @a".to_string(), false))
+    );
+    feed_nvim(&mut app, "q");
+
+    // The visual selection reaches the renderer as byte ranges.
+    feed_nvim(&mut app, "0vll");
+    let view = app.comment_vim_view().unwrap();
+    assert_eq!(view.label, "VISUAL");
+    assert_eq!(view.selection, vec![0..3]);
+    assert!(view.block_cursor);
+    feed_nvim(&mut app, "\x1b");
+
+    // The command line shows in the header while it is typed.
+    feed_nvim(&mut app, ":s/w/W");
+    assert_eq!(
+        app.comment_vim_mode_label(),
+        Some((":s/w/W".to_string(), false))
+    );
+    feed_nvim(&mut app, "\r");
+    assert_eq!(app.comment_buffer, "World");
+}
+
+#[test]
+fn comment_nvim_write_routes_to_save_comment() {
+    let mut app = build_app();
+    if !attach_clean_nvim(&mut app) {
+        return;
+    }
+    app.enter_review_comment_mode();
+    app.ensure_comment_vim_editor();
+    // `:w` reaches save_comment; on an empty buffer save rejects it and the
+    // box stays open — proving the route without touching disk.
+    feed_nvim(&mut app, "\x1b:w\r");
+    assert_eq!(app.input_mode, InputMode::Comment);
+    assert_eq!(
+        app.message.as_ref().map(|m| m.content.as_str()),
+        Some("Comment cannot be empty")
+    );
+}
+
+#[test]
+fn comment_nvim_restarts_editing_each_comment() {
+    let mut app = build_app();
+    if !attach_clean_nvim(&mut app) {
+        return;
+    }
+    app.enter_review_comment_mode();
+    app.ensure_comment_vim_editor();
+    feed_nvim(&mut app, "first draft");
+    app.exit_comment_mode();
+
+    // A second comment starts from its own text in Insert mode, and `u`
+    // cannot undo back into the first one.
+    app.enter_review_comment_mode();
+    app.comment_buffer = "second".to_string();
+    app.comment_cursor = 6;
+    app.ensure_comment_vim_editor();
+    settle_nvim(&mut app);
+    assert_eq!(
+        app.comment_vim_mode_label(),
+        Some(("INSERT".to_string(), false))
+    );
+    feed_nvim(&mut app, "!\x1buu");
+    assert_eq!(app.comment_buffer, "second");
 }
 
 fn build_app_with_commits(commits: Vec<CommitInfo>) -> App {
