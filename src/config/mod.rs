@@ -287,6 +287,9 @@ pub struct AppConfig {
     /// Enable vim-style modal editing in the review comment text box. When
     /// unset/false the comment box uses the default emacs/readline bindings.
     pub comment_vim: Option<bool>,
+    /// Engine behind `comment_vim`: `"nvim"` (default) embeds Neovim with the
+    /// user's config; `"builtin"` uses the built-in emulation.
+    pub comment_vim_backend: Option<String>,
     /// Restore the legacy bare `q` quit binding in review modes.
     /// Defaults to false.
     pub q_quits: Option<bool>,
@@ -387,6 +390,7 @@ const KNOWN_KEYS: &[&str] = &[
     "mouse",
     "mouse_scroll_lines",
     "comment_vim",
+    "comment_vim_backend",
     "q_quits",
     "comment_tab_width",
     "leader",
@@ -833,6 +837,12 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
         mouse: read_bool(table, "mouse", &mut warnings),
         mouse_scroll_lines: read_mouse_scroll_lines(table, &mut warnings),
         comment_vim: read_bool(table, "comment_vim", &mut warnings),
+        comment_vim_backend: read_enum(
+            table,
+            "comment_vim_backend",
+            &["nvim", "builtin"],
+            &mut warnings,
+        ),
         q_quits: read_bool(table, "q_quits", &mut warnings),
         comment_tab_width: read_usize(table, "comment_tab_width", &mut warnings),
         leader: read_leader(table, &mut warnings),
@@ -1762,6 +1772,36 @@ mod tests {
             Some("unified")
         );
         assert!(outcome.warnings.is_empty());
+    }
+
+    // comment_vim_backend
+
+    #[test]
+    fn should_parse_comment_vim_backend() {
+        for value in ["nvim", "builtin"] {
+            let outcome = parse_config(&format!("comment_vim_backend = \"{value}\"\n"));
+            assert_eq!(
+                outcome
+                    .config
+                    .as_ref()
+                    .and_then(|cfg| cfg.comment_vim_backend.as_deref()),
+                Some(value)
+            );
+            assert!(outcome.warnings.is_empty());
+        }
+    }
+
+    #[test]
+    fn should_warn_on_unknown_comment_vim_backend() {
+        let outcome = parse_config("comment_vim_backend = \"vim\"\n");
+        assert_eq!(
+            outcome
+                .config
+                .as_ref()
+                .and_then(|cfg| cfg.comment_vim_backend.as_deref()),
+            None
+        );
+        assert_eq!(outcome.warnings.len(), 1);
     }
 
     // commit_order / initial_commit_selection

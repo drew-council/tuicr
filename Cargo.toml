@@ -22,6 +22,9 @@ crossterm = "0.29"
 # `comment_vim`). Used as the editing model + input engine only; we keep our
 # own rendering, so its widget/clipboard/syntax features are disabled.
 edtui = { version = "0.11", default-features = false }
+# MessagePack codec for the embedded-Neovim comment editor's RPC channel
+# (`comment_vim_backend = "nvim"`).
+rmpv = "1"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

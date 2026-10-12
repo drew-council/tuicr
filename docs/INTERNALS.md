@@ -33,6 +33,15 @@ Subsystem invariants, loaded on demand from `AGENTS.md`. Cross-cutting rules and
 - `FilePicker` (`src/app/file_picker.rs`): built like `ThemePicker`. Candidates are captured on open from files passing `file_passes_filter`; a background reload can replace `diff_files` meanwhile, so `Enter` re-resolves by display path and re-checks the filter (`jump_to_file`).
 - Comment navigation (`CommentNavigatorState`/`CommentNavigatorItem`) derives from `line_annotations`, so local comments and visible remote threads jump to the annotations the diff renders (`move_cursor_to_annotation`). The navigator hides when no comment rows exist.
 
+## Vim comment box
+
+`comment_vim` puts the comment box under a vim engine held in `App::comment_vim_editor`: `CommentVimEngine::Nvim` (default, `comment_vim_backend = "nvim"`, `src/nvim/`) drives an embedded `nvim --embed --headless` in `App::comment_nvim`; `CommentVimEngine::Builtin` is edtui (`src/comment_vim.rs`), also the fallback when Neovim cannot start. `comment_buffer`/`comment_cursor` stay canonical either way: engines sync into them and the renderers never talk to Neovim (`App::comment_vim_view` hands them the mode badge and visual selection).
+- The terminal cursor follows the mode like Neovim's default `guicursor`: block in Normal/Visual, bar in Insert, underline in Replace and operator-pending. `App::terminal_cursor_shape` picks it per frame and `TerminalSession::set_cursor_shape` writes DECSCUSR only on change. The session restores the user's shape whenever it leaves TUI mode (exit, `$EDITOR` suspend, panic).
+- One headless Neovim per tuicr process, spawned at startup (`prewarm_comment_nvim`) so the user's config loads in the background, and reused per comment: `begin.lua` swaps in the text and discards the undo tree. `:q`/`:wq` exit Neovim itself (`VimLeavePre` -> `tuicr_quit`); the app respawns it. `poll_comment_nvim_events` runs every tick.
+- Each forwarded key is followed by a `get_state.lua` request that the key path waits on (`SYNC_TIMEOUT`). This relies on Neovim consuming queued `nvim_input` before it services the next non-fast request. Neovim only services those requests from its top-level mode loops: while a command waits for another key (`q`, `f`, `r`, a partial mapping such as `jk`, a `:s///c` prompt) the request is deferred and `nvim_get_mode` reports `blocking`, so `sync()` waits only `BLOCKED_GRACE` and the state lands via `poll`.
+- Never change mode with `feedkeys`/`startinsert` inside an `nvim_exec_lua` request: requests queued behind it run in the same batch, before that typeahead is consumed, and read a stale mode. Send keys with `nvim_input` (`<Cmd>startinsert<CR>`), which is ordered ahead of later requests and skips user mappings.
+- Tests run Neovim with `--clean` and skip when `nvim` is not on `PATH`. A test asserting on state right after a key must wait for `is_syncing()` to clear (`settle`), not rely on the sync timeout, which a loaded test run outlasts.
+
 ## Startup, themes, syntaxes, update
 
 - `src/syntax/mod.rs` translates the ANSI-slot placeholders some bat-compatible Base16 `.tmTheme` files use.

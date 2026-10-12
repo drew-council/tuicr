@@ -1440,9 +1440,7 @@ pub(super) fn append_review_comments_section<'a>(
             None,
             is_editing,
             comment_width,
-            app.comment_vim_mode_label()
-                .as_ref()
-                .map(|(t, w)| (t.as_str(), *w)),
+            app.comment_vim_view().as_ref(),
             app.supports_keyboard_enhancement,
         )
     };
@@ -1585,9 +1583,7 @@ pub(super) fn append_file_preamble<'a>(
             None,
             is_editing,
             comment_width,
-            app.comment_vim_mode_label()
-                .as_ref()
-                .map(|(t, w)| (t.as_str(), *w)),
+            app.comment_vim_view().as_ref(),
             app.supports_keyboard_enhancement,
         )
     };

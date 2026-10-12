@@ -305,6 +305,9 @@ fn main() -> anyhow::Result<()> {
                 app.keymap = keymap;
                 startup_warnings.extend(keymap_warnings);
                 app.comment_vim_enabled = cfg.comment_vim.unwrap_or(false);
+                if cfg.comment_vim_backend.as_deref() == Some("builtin") {
+                    app.comment_vim_backend = app::CommentVimBackend::Builtin;
+                }
                 app.editor_override = cfg.editor.clone();
                 if let Some(w) = cfg.comment_tab_width {
                     app.comment_tab_width = w;
@@ -317,6 +320,11 @@ fn main() -> anyhow::Result<()> {
                 {
                     app.username = username.to_string();
                 }
+            }
+            if let Err(err) = app.prewarm_comment_nvim() {
+                startup_warnings.push(format!(
+                    "Embedded Neovim unavailable, using the built-in vim editor: {err}"
+                ));
             }
             app
         }
@@ -519,6 +527,7 @@ fn main() -> anyhow::Result<()> {
         app.poll_pr_submit_events();
         app.poll_pr_draft_delete_events();
         needs_redraw |= app.poll_editor_launches();
+        needs_redraw |= app.poll_comment_nvim_events();
         needs_redraw |= app.poll_persisted_session_changes();
         needs_redraw |= app.poll_diff_watch_changes();
         needs_redraw |= pr_pending;
@@ -549,6 +558,7 @@ fn main() -> anyhow::Result<()> {
                     ui::render(frame, &mut app);
                 })?;
             }
+            terminal.set_cursor_shape(app.terminal_cursor_shape())?;
             execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
             needs_redraw = false;
         }
@@ -616,8 +626,8 @@ fn main() -> anyhow::Result<()> {
                         app.message = None;
                     }
 
-                    // Vim modal editing: route comment-box keys to the edtui
-                    // overlay (app-level keys handled inside).
+                    // Vim modal editing: route comment-box keys to the vim
+                    // engine (app-level keys handled inside).
                     if app.input_mode == InputMode::Comment && app.comment_vim_enabled {
                         if handler::handle_global_key(&mut app, key) {
                             continue;
@@ -719,6 +729,8 @@ fn main() -> anyhow::Result<()> {
 fn handle_comment_vim_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
     use crossterm::event::{KeyCode, KeyModifiers};
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    // Neovim has its own `:` command line, macros on `q`, and Tab handling.
+    let nvim = app.comment_vim_uses_nvim();
 
     // An open `:` command-line captures all input until Enter/Esc.
     if app.comment_vim_command_active() {
@@ -764,7 +776,13 @@ fn handle_comment_vim_key(app: &mut App, key: crossterm::event::KeyEvent) -> boo
                 return true;
             }
             // `q` behaves exactly like Esc here (arm/confirm cancel).
-            KeyCode::Esc | KeyCode::Char('q') => {
+            KeyCode::Esc | KeyCode::Char('q') if !nvim => {
+                app.comment_vim_esc_normal();
+                return true;
+            }
+            KeyCode::Esc => {
+                // Also let Neovim see it, so a half-typed count is dropped.
+                app.comment_vim_feed_key(key);
                 app.comment_vim_esc_normal();
                 return true;
             }
@@ -779,13 +797,14 @@ fn handle_comment_vim_key(app: &mut App, key: crossterm::event::KeyEvent) -> boo
         KeyCode::Char('s') if ctrl => app.save_comment(),
         KeyCode::Enter if ctrl => app.save_comment(),
         // Tab cycles the comment type in Normal mode; in Insert it inserts a
-        // soft tab (`comment_tab_width` spaces).
+        // soft tab (`comment_tab_width` spaces). Neovim's own Tab does that
+        // already, through 'expandtab'/'softtabstop'.
         KeyCode::Tab | KeyCode::Char('\t') if normal => app.cycle_comment_type(),
-        KeyCode::Tab | KeyCode::Char('\t') => app.comment_vim_insert_soft_tab(),
+        KeyCode::Tab | KeyCode::Char('\t') if !nvim => app.comment_vim_insert_soft_tab(),
         KeyCode::BackTab if normal => app.cycle_comment_type_reverse(),
         // `:` opens the command-line in Normal mode (`:w` saves, `:q` cancels).
         // Esc/Enter in Normal fall through to edtui (Esc is a no-op there).
-        KeyCode::Char(':') if normal => app.start_comment_vim_command(),
+        KeyCode::Char(':') if normal && !nvim => app.start_comment_vim_command(),
         _ => app.comment_vim_feed_key(key),
     }
     true
