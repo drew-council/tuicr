@@ -142,9 +142,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                 None,
                 true,
                 comment_width,
-                app.comment_vim_mode_label()
-                    .as_ref()
-                    .map(|(t, w)| (t.as_str(), *w)),
+                app.comment_vim_view().as_ref(),
                 app.supports_keyboard_enhancement,
             );
             comment_cursor_logical_line = Some(line_idx + cursor_info.line_offset);
@@ -231,9 +229,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
             None,
             false,
             comment_width,
-            app.comment_vim_mode_label()
-                .as_ref()
-                .map(|(t, w)| (t.as_str(), *w)),
+            app.comment_vim_view().as_ref(),
             app.supports_keyboard_enhancement,
         );
         comment_cursor_logical_line = Some(line_idx + cursor_info.line_offset);
@@ -338,9 +334,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                         None,
                         true,
                         comment_width,
-                        app.comment_vim_mode_label()
-                            .as_ref()
-                            .map(|(t, w)| (t.as_str(), *w)),
+                        app.comment_vim_view().as_ref(),
                         app.supports_keyboard_enhancement,
                     );
                     // Track cursor position: logical line = current line_idx + cursor offset within input
@@ -406,9 +400,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                 None,
                 false,
                 comment_width,
-                app.comment_vim_mode_label()
-                    .as_ref()
-                    .map(|(t, w)| (t.as_str(), *w)),
+                app.comment_vim_view().as_ref(),
                 app.supports_keyboard_enhancement,
             );
             // Track cursor position
@@ -720,9 +712,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                                 line_range,
                                                 true,
                                                 comment_width,
-                                                app.comment_vim_mode_label()
-                                                    .as_ref()
-                                                    .map(|(t, w)| (t.as_str(), *w)),
+                                                app.comment_vim_view().as_ref(),
                                                 app.supports_keyboard_enhancement,
                                             );
                                         comment_cursor_logical_line =
@@ -848,9 +838,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                     line_range,
                                     false,
                                     comment_width,
-                                    app.comment_vim_mode_label()
-                                        .as_ref()
-                                        .map(|(t, w)| (t.as_str(), *w)),
+                                    app.comment_vim_view().as_ref(),
                                     app.supports_keyboard_enhancement,
                                 );
                             comment_cursor_logical_line = Some(line_idx + cursor_info.line_offset);
@@ -908,9 +896,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                                 line_range,
                                                 true,
                                                 comment_width,
-                                                app.comment_vim_mode_label()
-                                                    .as_ref()
-                                                    .map(|(t, w)| (t.as_str(), *w)),
+                                                app.comment_vim_view().as_ref(),
                                                 app.supports_keyboard_enhancement,
                                             );
                                         comment_cursor_logical_line =
@@ -1035,9 +1021,7 @@ pub(super) fn render_unified_diff(frame: &mut Frame, app: &mut App, area: Rect) 
                                     line_range,
                                     false,
                                     comment_width,
-                                    app.comment_vim_mode_label()
-                                        .as_ref()
-                                        .map(|(t, w)| (t.as_str(), *w)),
+                                    app.comment_vim_view().as_ref(),
                                     app.supports_keyboard_enhancement,
                                 );
                             comment_cursor_logical_line = Some(line_idx + cursor_info.line_offset);

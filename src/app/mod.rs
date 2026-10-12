@@ -18,6 +18,7 @@ use crate::model::{
     ClearScope, Comment, CommentType, DiffFile, DiffHunk, DiffLine, FileStatus, LineOrigin,
     LineRange, LineSide, ReviewSession, SessionDiffSource,
 };
+use crate::nvim::NvimHost;
 use crate::persistence::load_latest_session_for_context;
 use crate::review_store::{AddCommentRequest, CommentTarget, add_comment_to_session};
 use crate::syntax::SyntaxHighlighter;
@@ -1103,6 +1104,24 @@ pub enum CommentVimPending {
     Cancel,
 }
 
+/// Which vim engine drives the comment box (config `comment_vim_backend`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CommentVimBackend {
+    /// An embedded `nvim --embed`: real Vim, with the user's config.
+    #[default]
+    Nvim,
+    /// The built-in `edtui` emulation; also the fallback when Neovim is
+    /// unavailable.
+    Builtin,
+}
+
+/// The engine editing the current comment.
+pub enum CommentVimEngine {
+    Builtin(Box<CommentVimEditor>),
+    /// `App::comment_nvim` owns the text; `comment_buffer` mirrors it.
+    Nvim,
+}
+
 pub struct App {
     pub theme: Theme,
     pub vcs: Box<dyn VcsBackend>,
@@ -1210,9 +1229,17 @@ pub struct App {
     /// Spaces inserted by Tab while typing in the vim comment box (config
     /// `comment_tab_width`, default 4).
     pub comment_tab_width: usize,
+    /// Config `comment_vim_backend`.
+    pub comment_vim_backend: CommentVimBackend,
+    /// Embedded Neovim for `CommentVimBackend::Nvim`. Started ahead of the
+    /// first comment and reused for every comment after it.
+    pub comment_nvim: Option<NvimHost>,
+    /// Neovim failed to start; the built-in editor is used until `:vim` is
+    /// toggled, so the failure is reported once rather than per comment.
+    pub comment_nvim_unavailable: bool,
     /// Active vim overlay (only while in comment mode with vim on); synced into
     /// `comment_buffer`/`comment_cursor`, which stay canonical for rendering.
-    pub comment_vim_editor: Option<CommentVimEditor>,
+    pub comment_vim_editor: Option<CommentVimEngine>,
     /// In-progress `:` command-line in vim Normal mode (without the leading
     /// `:`); `Some("")` right after `:` is pressed. `:w` saves, `:q` cancels.
     pub comment_vim_command: Option<String>,

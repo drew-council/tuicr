@@ -41,6 +41,7 @@ mouse = true
 leader = ","
 editor = "nvim"
 comment_vim = false
+comment_vim_backend = "nvim"
 q_quits = false
 comment_tab_width = 4
 wrap = false
@@ -108,6 +109,7 @@ session_header = true
 | `leader`                   | `;`          | Single-character prefix for panel focus, sidebar toggles, and review-comment shortcuts. Invalid multi-character values are ignored with a startup warning. |
 | `editor`                   | `$EDITOR`    | Editor command for the `e` / `:edit` handoff, split with shell-like quoting rules (e.g. `"code -w"`). Falls back to `$EDITOR`, then `vi`. |
 | `comment_vim`              | `false`      | Vim modal editing in the comment box; toggle at runtime with `:vim`. When off, default emacs/readline bindings.                                            |
+| `comment_vim_backend`      | `"nvim"`     | Engine behind `comment_vim`. `"nvim"` embeds Neovim (0.10+, `nvim` on `PATH`) with your own config, mappings, and plugins; `"builtin"` uses the built-in emulation. Falls back to `"builtin"` with a warning when Neovim cannot start. |
 | `q_quits`                  | `false`      | Restore bare `q` as a quit key in review modes. `:q`, `ZZ`, and `ZQ` work regardless of this setting.                                                     |
 | `comment_tab_width`        | `4`          | Spaces inserted by Tab while typing in the vim comment box (Insert mode).                                                                                  |
 | `wrap`                     | `false`      | Line wrap in the diff view. Toggle with `:set wrap!`.                                                                                                      |

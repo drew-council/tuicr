@@ -219,16 +219,28 @@ from the checkout, never copied.
 | `Ctrl-u` | Clear line |
 | `Esc` / `Ctrl-c` | Cancel |
 
-With `comment_vim = true` the box uses [`edtui`](https://github.com/preiter93/edtui)
-modal editing (Normal/Insert/Visual: `hjkl`, `w`/`b`/`e`, `dd`/`D`/`ciw`/`x`,
-`u`/`Ctrl-r`, visual `v`+`y`/`d`/`p`). From Normal mode `:w` (or `Enter` twice)
-saves and `:q` (or `Esc`/`q` twice) cancels — the first press arms the action
-and the header shows a confirm hint. `Alt-Enter` (Option+Enter) accepts and
-`Alt-Esc` discards directly (no double-press) — Alt is the one modified
+With `comment_vim = true` the box is edited by an embedded Neovim
+(`comment_vim_backend = "nvim"`, the default): real Vim, with your own config,
+mappings, and plugins — counts, operators and text objects, registers, macros,
+`.`, visual block, and ex commands such as `:s`. tuicr still draws the box: the
+header shows the mode (or the command line while you type one) and visual
+selections are highlighted. Each comment opens in Insert mode with its own undo
+history. `:w` saves and `:q` cancels (`:wq` / `ZZ` save and close). From Normal
+mode `Enter` twice also saves and `Esc` twice cancels — the first press arms the
+action and the header shows a confirm hint. `Alt-Enter` (Option+Enter) accepts
+and `Alt-Esc` discards directly (no double-press) — Alt is the one modified
 `Enter`/`Esc` that reaches the app across terminals, including browser/web
-terminals like zellij web. `Tab` cycles the comment type in Normal
-mode and inserts `comment_tab_width` spaces (default 4) in Insert mode; `Ctrl-s`
-also saves.
+terminals like zellij web. `Tab` / `Shift-Tab` cycle the comment type in Normal
+mode; in Insert mode `Tab` inserts `comment_tab_width` spaces (default 4).
+`Ctrl-s` also saves. Neovim (0.10 or newer, as `nvim` on `PATH`) starts with
+tuicr and is reused for every comment; when it cannot start, tuicr says so and
+falls back to the built-in editor.
+
+With `comment_vim_backend = "builtin"` the box uses the built-in
+[`edtui`](https://github.com/preiter93/edtui) emulation instead (Normal/Insert/
+Visual: `hjkl`, `w`/`b`/`e`, `dd`/`D`/`ciw`/`x`, `u`/`Ctrl-r`, visual
+`v`+`y`/`d`/`p`), with the same save/cancel keys, `q` twice also cancelling, and
+its own `:w` / `:q` command line.
 
 ## Commands
 

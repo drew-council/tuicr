@@ -22,6 +22,12 @@ src/
 │   └── file_filter.rs   # File-tree include/exclude regex filters + `/` path search
 ├── error.rs             # Error types (TuicrError enum)
 ├── editor.rs            # External $EDITOR command construction and launch helpers
+├── comment_vim.rs       # Built-in (edtui) vim engine for the comment box
+├── nvim/                # Embedded `nvim --embed --headless` vim engine for the comment box
+│   ├── mod.rs           # NvimHost: spawn, begin/send_key/paste/poll, state sync, events
+│   ├── rpc.rs           # Minimal synchronous msgpack-rpc client (reader thread + channel)
+│   ├── keys.rs          # crossterm KeyEvent -> nvim_input() key notation
+│   └── lua/             # setup.lua (buffer, autocmds, message capture), begin.lua, get_state.lua
 ├── review_store.rs      # Library API for session listing/loading and shared comment insertion
 ├── review_cli.rs        # Non-interactive `tuicr review` subcommands over ReviewStore
 ├── update.rs            # Public update facade
@@ -262,9 +268,42 @@ Repository-managed agent integrations:
 - `self-replace` + `tempfile`: Guarded staging and cross-platform executable swaps
 - `toml`: User config parsing
 - `arboard`: Clipboard access
+- `edtui`: Built-in vim engine for the comment box (`comment_vim_backend = "builtin"`)
+- `rmpv`: MessagePack codec for the embedded Neovim comment editor's RPC channel
 - `ignore`: Gitignore-style matcher for `.tuicrignore`
 - `chrono`: Timestamps
 - `thiserror` + `anyhow`: Error handling
+
+## Vim comment box
+
+`comment_vim` puts the comment box under a vim engine, held in
+`App::comment_vim_editor`: `CommentVimEngine::Nvim` (default,
+`comment_vim_backend = "nvim"`) drives the embedded Neovim in `App::comment_nvim`;
+`CommentVimEngine::Builtin` is edtui, also the fallback when Neovim cannot start.
+`comment_buffer`/`comment_cursor` stay canonical either way: engines sync into
+them and the renderers never talk to Neovim (`App::comment_vim_view` hands them
+the mode badge and visual selection).
+
+- One headless Neovim per tuicr process, spawned at startup
+  (`prewarm_comment_nvim`) so the user's config loads in the background, and
+  reused per comment: `begin.lua` swaps in the text and discards the undo tree.
+  `:q`/`:wq` exit Neovim itself (`VimLeavePre` -> `tuicr_quit`); the app
+  respawns it. `poll_comment_nvim_events` runs every tick.
+- Each forwarded key is followed by a `get_state.lua` request that the key path
+  waits on (`SYNC_TIMEOUT`). This relies on Neovim consuming queued
+  `nvim_input` before it services the next non-fast request. But Neovim only
+  services those requests from its top-level mode loops: while a command waits
+  for another key (`q`, `f`, `r`, a partial mapping such as `jk`, a `:s///c`
+  prompt) the request is deferred and `nvim_get_mode` reports `blocking`, so
+  `sync()` waits only `BLOCKED_GRACE` and the state lands via `poll`.
+- Never change mode with `feedkeys`/`startinsert` inside an `nvim_exec_lua`
+  request: requests queued behind it run in the same batch, before that
+  typeahead is consumed, and read a stale mode. Send keys with `nvim_input`
+  (`<Cmd>startinsert<CR>`), which is ordered ahead of later requests and skips
+  user mappings.
+- Tests run Neovim with `--clean` and skip when `nvim` is not on `PATH`. A test
+  asserting on state right after a key must wait for `is_syncing()` to clear
+  (`settle`), not rely on the sync timeout, which a loaded test run outlasts.
 
 ## Forge integration
 

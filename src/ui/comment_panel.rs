@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use ratatui::{
     Frame,
     layout::{Constraint, Flex, Layout, Rect},
@@ -86,6 +88,54 @@ fn highlighted_window_spans(
     out
 }
 
+/// `highlighted_window_spans`, with the parts of the window that fall inside
+/// `selection` painted with `selection_style`. `selection` holds absolute byte
+/// ranges of the buffer; `line_start` is this line's absolute offset.
+fn selected_window_spans(
+    runs: Option<&[(Style, String)]>,
+    line_text: &str,
+    window: Range<usize>,
+    line_start: usize,
+    selection: &[Range<usize>],
+    selection_style: Style,
+) -> Vec<Span<'static>> {
+    let mut out = Vec::new();
+    let mut pos = window.start;
+    while pos < window.end {
+        let abs = line_start + pos;
+        if let Some(range) = selection.iter().find(|r| r.contains(&abs)) {
+            let stop = (range.end - line_start).min(window.end);
+            out.extend(
+                highlighted_window_spans(runs, line_text, pos, stop)
+                    .into_iter()
+                    .map(|span| span.patch_style(selection_style)),
+            );
+            pos = stop;
+        } else {
+            let stop = selection
+                .iter()
+                .filter(|r| r.start > abs)
+                .map(|r| (r.start - line_start).min(window.end))
+                .min()
+                .unwrap_or(window.end);
+            out.extend(highlighted_window_spans(runs, line_text, pos, stop));
+            pos = stop;
+        }
+    }
+    out
+}
+
+/// What the vim engine contributes to the comment input box.
+#[derive(Debug, Clone, Default)]
+pub struct CommentVimView {
+    /// Header badge: the mode, a pending-confirm hint, or the command line.
+    pub label: String,
+    /// Paint the badge as a warning (the cancel confirm).
+    pub warn: bool,
+    /// Byte ranges of the buffer inside the visual selection.
+    pub selection: Vec<Range<usize>>,
+}
+
 /// Information about where the cursor should be positioned within comment input
 #[derive(Debug, Clone)]
 pub struct CommentCursorInfo {
@@ -118,7 +168,7 @@ pub fn format_comment_input_lines(
     line_range: Option<LineRange>,
     is_editing: bool,
     width: usize,
-    vim_mode: Option<(&str, bool)>,
+    vim: Option<&CommentVimView>,
     supports_keyboard_enhancement: bool,
 ) -> (Vec<Line<'static>>, CommentCursorInfo) {
     let type_style = styles::comment_type_style(theme, comment_type.color);
@@ -126,6 +176,9 @@ pub fn format_comment_input_lines(
     let cursor_style = Style::default()
         .fg(theme.cursor_color)
         .add_modifier(Modifier::UNDERLINED);
+    let vim_mode = vim.map(|view| (view.label.as_str(), view.warn));
+    let selection = vim.map_or(&[][..], |view| view.selection.as_slice());
+    let selection_style = styles::visual_selection_style(theme);
 
     let action = if is_editing { "Edit" } else { "Add" };
     let line_info = match line_range {
@@ -242,30 +295,41 @@ pub fn format_comment_input_lines(
                     cursor_column = BORDER_PREFIX_WIDTH as u16 + before.width() as u16;
 
                     // before-cursor text, highlighted
-                    line_spans.extend(highlighted_window_spans(
+                    line_spans.extend(selected_window_spans(
                         line_runs,
                         text,
-                        seg_byte_start,
-                        cursor_in_line,
+                        seg_byte_start..cursor_in_line,
+                        line_start,
+                        selection,
+                        selection_style,
                     ));
                     // Cursor char gets the cursor style; the rest stays highlighted.
                     // No trailing cell at end-of-segment — the terminal cursor
                     // (set_cursor_position) handles that position.
                     if let Some(cursor_char) = after.chars().next() {
-                        line_spans.push(Span::styled(cursor_char.to_string(), cursor_style));
-                        line_spans.extend(highlighted_window_spans(
+                        let style = if selection.iter().any(|r| r.contains(&cursor_pos)) {
+                            cursor_style.patch(selection_style)
+                        } else {
+                            cursor_style
+                        };
+                        line_spans.push(Span::styled(cursor_char.to_string(), style));
+                        line_spans.extend(selected_window_spans(
                             line_runs,
                             text,
-                            cursor_in_line + cursor_char.len_utf8(),
-                            seg_end_in_line,
+                            cursor_in_line + cursor_char.len_utf8()..seg_end_in_line,
+                            line_start,
+                            selection,
+                            selection_style,
                         ));
                     }
                 } else {
-                    line_spans.extend(highlighted_window_spans(
+                    line_spans.extend(selected_window_spans(
                         line_runs,
                         text,
-                        seg_byte_start,
-                        seg_end_in_line,
+                        seg_byte_start..seg_end_in_line,
+                        line_start,
+                        selection,
+                        selection_style,
                     ));
                 }
 

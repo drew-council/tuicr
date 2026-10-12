@@ -10,6 +10,7 @@ pub mod handler;
 pub mod hash;
 pub mod input;
 pub mod model;
+pub mod nvim;
 pub mod output;
 pub mod persistence;
 pub mod process;

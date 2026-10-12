@@ -630,7 +630,7 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         comment_mode_row(
             "comment_vim",
             if app.comment_vim_enabled {
-                "Vim ON (i/a:insert Esc:normal hjkl dd/ciw/x u; S-Enter:save S-Esc:discard :w/:q)"
+                "Vim ON (Esc:normal i/a:insert; :w or Alt-Enter:save, :q or Alt-Esc:discard)"
             } else {
                 "Set comment_vim=true (or :vim) for vim modal editing"
             },
