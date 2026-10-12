@@ -129,6 +129,9 @@ fn handle_app_action(app: &mut App, invocation: &Invocation) -> bool {
         Action::ShowReviewed => app.set_show_reviewed(true),
         Action::HideReviewed => app.set_show_reviewed(false),
         Action::ToggleShowReviewed => app.toggle_show_reviewed(),
+        Action::ShowBotReviews => app.set_show_bot_reviews(true),
+        Action::HideBotReviews => app.set_show_bot_reviews(false),
+        Action::ToggleShowBotReviews => app.toggle_show_bot_reviews(),
         Action::OpenCommits => open_target_selector(app, TargetTab::Local),
         Action::OpenPullRequests => open_target_selector(app, TargetTab::PullRequests),
         Action::OpenSessions => open_target_selector(app, TargetTab::Sessions),
@@ -1944,5 +1947,22 @@ mod command_tests {
         assert_eq!(runs("theme"), Some(Action::ThemePicker.into()));
         assert_eq!(parse_command("theme "), None);
         assert_eq!(parse_command("nope"), None);
+    }
+
+    #[test]
+    fn parses_every_bot_reviews_visibility_command_form() {
+        assert_eq!(runs("set botreviews"), Some(Action::ShowBotReviews.into()));
+        assert_eq!(
+            runs("set nobotreviews"),
+            Some(Action::HideBotReviews.into())
+        );
+        assert_eq!(
+            runs("set botreviews!"),
+            Some(Action::ToggleShowBotReviews.into())
+        );
+        assert_eq!(
+            runs("botreviews"),
+            Some(Action::ToggleShowBotReviews.into())
+        );
     }
 }

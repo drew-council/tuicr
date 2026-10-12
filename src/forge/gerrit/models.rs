@@ -332,6 +332,7 @@ pub fn summaries_from_drafts(
                 state: RemoteReviewState::Pending,
                 created_at: remote.created_at,
                 url: remote.url,
+                is_bot: false,
             }
         })
         .collect()

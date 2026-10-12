@@ -442,6 +442,7 @@ pub fn draft_notes_to_review(
             }),
             None => summaries.push(RemoteReviewSummary {
                 id: comment.id,
+                is_bot: false,
                 author: author.map(str::to_string),
                 body: note.note,
                 state: RemoteReviewState::Pending,

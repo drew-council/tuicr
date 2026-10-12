@@ -138,6 +138,9 @@ pub enum Action {
     ShowReviewed,
     HideReviewed,
     ToggleShowReviewed,
+    ShowBotReviews,
+    HideBotReviews,
+    ToggleShowBotReviews,
 
     // Text input
     InsertChar(char),
@@ -793,6 +796,27 @@ pub const ACTIONS: &[ActionSpec] = &[
         "Show or hide reviewed files",
     )
     .cmd(&["reviewed", "set reviewed!"]),
+    spec(
+        Action::ShowBotReviews,
+        "show-bot-reviews",
+        Ignore,
+        "Show bot review summaries",
+    )
+    .cmd(&["set botreviews"]),
+    spec(
+        Action::HideBotReviews,
+        "hide-bot-reviews",
+        Ignore,
+        "Hide bot review summaries",
+    )
+    .cmd(&["set nobotreviews"]),
+    spec(
+        Action::ToggleShowBotReviews,
+        "toggle-show-bot-reviews",
+        Ignore,
+        "Show or hide bot review summaries",
+    )
+    .cmd(&["botreviews", "set botreviews!"]),
     spec(
         Action::ToggleDiffView,
         "toggle-diff-view",
