@@ -30,7 +30,7 @@ use crate::error::{Result, TuicrError};
 use crate::forge::local_git::read_blob;
 use crate::forge::remote_comments::{
     RemoteCommentSide, RemoteReviewComment, RemoteReviewState, RemoteReviewSummary,
-    RemoteReviewThread,
+    RemoteReviewThread, is_bot_login,
 };
 use crate::forge::submit::{GhSide, SubmitEvent};
 use crate::forge::traits::{
@@ -974,13 +974,17 @@ where
             // renders bodies.
             .filter(|review| !review.body.trim().is_empty())
             .filter(|review| !review.state.eq_ignore_ascii_case("PENDING"))
-            .map(|review| RemoteReviewSummary {
-                id: review.id.to_string(),
-                author: GiteaUser::login(review.user),
-                body: review.body,
-                state: parse_review_state(&review.state),
-                created_at: review.submitted_at,
-                url: review.html_url,
+            .map(|review| {
+                let author = GiteaUser::login(review.user);
+                RemoteReviewSummary {
+                    id: review.id.to_string(),
+                    is_bot: is_bot_login(author.as_deref()),
+                    author,
+                    body: review.body,
+                    state: parse_review_state(&review.state),
+                    created_at: review.submitted_at,
+                    url: review.html_url,
+                }
             })
             .collect())
     }

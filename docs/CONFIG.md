@@ -37,6 +37,7 @@ show_commits = true
 show_reviewed = true
 show_generated = false
 show_vendored = false
+show_bot_reviews = false
 mouse = true
 mouse_scroll_lines = 3
 leader = ","
@@ -107,6 +108,7 @@ session_header = true
 | `show_reviewed`            | `true`       | Whether files already marked reviewed appear in the file tree and the diff. Set `false` to start a session showing only what is left. Toggle with `:set reviewed!`. |
 | `show_generated`           | `false`      | Whether files tagged `linguist-generated` / `gitlab-generated` in `.gitattributes` appear in the file tree and the diff. Toggle with `:set generated!`. See [.gitattributes](#gitattributes). |
 | `show_vendored`            | `false`      | Whether files tagged `linguist-vendored` in `.gitattributes` appear in the file tree and the diff. Toggle with `:set vendored!`. See [.gitattributes](#gitattributes). |
+| `show_bot_reviews`         | `false`      | Whether PR review summaries written by bots (Copilot overviews, CI integrations) render under Review Comments. Their inline threads are unaffected; `:comments` governs those. Toggle with `:set botreviews!`. |
 | `mouse`                    | `true`       | Wheel scrolling, clicks, and drag-to-select.                                                                                                               |
 | `mouse_scroll_lines`       | `3`          | Lines scrolled per mouse wheel tick in the diff, file list, comment list, help, and summary views; the commit list moves its cursor this many rows. Must be between 1 and 100; other values are ignored with a startup warning. |
 | `leader`                   | `;`          | Single-character prefix for panel focus, sidebar toggles, and review-comment shortcuts. Invalid multi-character values are ignored with a startup warning. |

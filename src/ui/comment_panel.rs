@@ -1214,6 +1214,7 @@ mod tests {
             state: crate::forge::remote_comments::RemoteReviewState::Commented,
             created_at: None,
             url: String::new(),
+            is_bot: false,
         };
 
         let lines =

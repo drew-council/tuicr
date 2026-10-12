@@ -1473,6 +1473,7 @@ fn comment_navigator_includes_remote_review_summary() {
         state: RemoteReviewState::Commented,
         created_at: None,
         url: "https://example.com/r/1".into(),
+        is_bot: false,
     }];
     app.rebuild_annotations();
 
@@ -1489,6 +1490,60 @@ fn comment_navigator_includes_remote_review_summary() {
 
     // Scroll math stays consistent: annotation count matches total_lines.
     assert_eq!(app.total_lines(), app.line_annotations.len());
+}
+
+#[test]
+fn bot_review_summaries_start_hidden_and_toggle_back() {
+    use crate::forge::remote_comments::{RemoteReviewState, RemoteReviewSummary};
+
+    let summary = |id: &str, author: &str, is_bot: bool| RemoteReviewSummary {
+        id: id.into(),
+        author: Some(author.into()),
+        body: "review body".into(),
+        state: RemoteReviewState::Commented,
+        created_at: None,
+        url: String::new(),
+        is_bot,
+    };
+    let file = make_file_with_hunks("a.rs", vec![make_hunk(1, 1)]);
+    let mut app = build_app_with_files(vec![file], 10);
+    app.sync_viewport_width(80);
+
+    // given — one human and one bot summary, default visibility
+    app.set_forge_review_summaries(vec![
+        summary("PRR_bot", "copilot-pull-request-reviewer", true),
+        summary("PRR_human", "alice", false),
+    ]);
+    app.rebuild_annotations();
+    let review_rows = |app: &App| {
+        app.build_comment_navigator_items()
+            .iter()
+            .filter(|item| matches!(item.key, CommentNavigatorKey::RemoteReview { .. }))
+            .filter_map(|item| item.author.clone())
+            .collect::<Vec<_>>()
+    };
+
+    // then — only the human summary renders
+    assert_eq!(review_rows(&app), vec!["alice".to_string()]);
+    assert_eq!(app.total_lines(), app.line_annotations.len());
+
+    // when / then — toggling reveals the bot summary in fetched order
+    app.toggle_show_bot_reviews();
+    assert_eq!(
+        review_rows(&app),
+        vec![
+            "copilot-pull-request-reviewer".to_string(),
+            "alice".to_string()
+        ]
+    );
+    assert_eq!(app.total_lines(), app.line_annotations.len());
+
+    // and a later fetch keeps honoring the toggle
+    app.toggle_show_bot_reviews();
+    app.set_forge_review_summaries(vec![summary("PRR_bot", "ci[bot]", true)]);
+    app.rebuild_annotations();
+    assert!(review_rows(&app).is_empty());
+    assert!(!app.has_review_section_content());
 }
 
 #[test]

@@ -101,6 +101,17 @@ pub struct RemoteReviewSummary {
     pub created_at: Option<DateTime<Utc>>,
     /// Permalink to the review on the forge.
     pub url: String,
+    /// Whether the reviewer is an automation account (Copilot, CI bots).
+    /// Bot summaries are long generated reports, so they start hidden
+    /// behind `:set botreviews` / config `show_bot_reviews`.
+    #[serde(default)]
+    pub is_bot: bool,
+}
+
+/// Fallback bot check for forges whose author payload has no account type:
+/// GitHub Apps and most hosted integrations sign as `name[bot]`.
+pub fn is_bot_login(login: Option<&str>) -> bool {
+    login.is_some_and(|login| login.ends_with("[bot]"))
 }
 
 /// A discussion thread on a forge — one root comment plus zero or more replies.
