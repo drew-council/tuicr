@@ -563,6 +563,8 @@ impl App {
             forge_backend: None,
             forge_review_threads: Vec::new(),
             forge_review_summaries: Vec::new(),
+            fetched_review_summaries: Vec::new(),
+            show_bot_reviews: false,
             forge_review_threads_loading: false,
             pr_threads_rx: None,
             forge_config: crate::config::ForgeConfig::default(),

@@ -376,6 +376,11 @@ fn main() -> anyhow::Result<()> {
         if cfg.show_vendored == Some(true) {
             app.init_show_vendored(true);
         }
+        // Bot review summaries (Copilot overviews etc.) start hidden;
+        // `:set botreviews!` toggles.
+        if cfg.show_bot_reviews == Some(true) {
+            app.init_show_bot_reviews(true);
+        }
         // Pristine mode has no diff, so side-by-side would render two
         // identical panes. Honor the config for every other mode.
         if cfg.diff_view.as_deref() == Some("side-by-side") && !app.is_pristine_mode {

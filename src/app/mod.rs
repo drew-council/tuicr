@@ -1326,7 +1326,18 @@ pub struct App {
     /// Review-level summary comments (body text on each `PullRequestReview`).
     /// Populated alongside `forge_review_threads`. These render at the top
     /// of the diff, parallel to local `session.review_comments` drafts.
+    ///
+    /// The visible subset of `fetched_review_summaries`: bot summaries drop
+    /// out unless `show_bot_reviews`. Every renderer and index (annotations,
+    /// navigator, search) reads this list, so assign fetched data through
+    /// `set_forge_review_summaries` rather than here.
     pub forge_review_summaries: Vec<crate::forge::remote_comments::RemoteReviewSummary>,
+    /// Every summary the forge returned, bots included.
+    pub fetched_review_summaries: Vec<crate::forge::remote_comments::RemoteReviewSummary>,
+    /// Show review summaries written by bots (`:set botreviews`, config
+    /// `show_bot_reviews`). Off by default: Copilot and CI reports are long
+    /// generated overviews that bury the human feedback.
+    pub show_bot_reviews: bool,
     /// True while a background remote-thread fetch is in flight for the
     /// currently open PR. Drives the footer "Loading remote comments…"
     /// hint and skips re-fetch if `:e` is hit again before the first

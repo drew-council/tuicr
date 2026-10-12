@@ -1397,6 +1397,7 @@ fn should_yank_remote_review_summary() {
         state: RemoteReviewState::Approved,
         created_at: None,
         url: "https://example.com/review-1".into(),
+        is_bot: false,
     }];
     app.rebuild_annotations();
 

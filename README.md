@@ -318,6 +318,7 @@ A first-session cheatsheet. Press `?` inside tuicr for the full reference.
 | `i` / `e` (file tree) | Filter files in / out by regex; narrows the tree **and** the diff |
 | `I` / `E` (file tree) | Clear the include / exclude filter |
 | `:set generated` / `:set vendored` | Reveal files hidden by `linguist-generated` / `linguist-vendored` in `.gitattributes` |
+| `:set botreviews` | Reveal PR review summaries written by bots (Copilot overviews and the like), hidden by default |
 | `c` / `C` | Add line / file comment |
 | `v` / `V` | Visual mode (range comment) |
 | `r` | Toggle file reviewed |

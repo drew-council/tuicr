@@ -83,6 +83,12 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         &["vendored", "set vendored!"],
         CommandKind::ToggleShowVendored,
     ),
+    CommandSpec::new(&["set botreviews"], CommandKind::SetShowBotReviews(true)),
+    CommandSpec::new(&["set nobotreviews"], CommandKind::SetShowBotReviews(false)),
+    CommandSpec::new(
+        &["botreviews", "set botreviews!"],
+        CommandKind::ToggleShowBotReviews,
+    ),
     CommandSpec::new(&["diff"], CommandKind::Diff),
     CommandSpec::new(&["focus", "f"], CommandKind::Focus),
     CommandSpec::new(&["stage"], CommandKind::Stage),
@@ -172,6 +178,8 @@ enum CommandKind {
     ToggleShowGenerated,
     SetShowVendored(bool),
     ToggleShowVendored,
+    SetShowBotReviews(bool),
+    ToggleShowBotReviews,
     Diff,
     Focus,
     Stage,
@@ -1009,6 +1017,14 @@ fn dispatch_command(app: &mut App, kind: CommandKind) -> CommandAfterDispatch {
         }
         CommandKind::ToggleShowVendored => {
             app.toggle_show_vendored();
+            CommandAfterDispatch::ExitCommandMode
+        }
+        CommandKind::SetShowBotReviews(show) => {
+            app.set_show_bot_reviews(show);
+            CommandAfterDispatch::ExitCommandMode
+        }
+        CommandKind::ToggleShowBotReviews => {
+            app.toggle_show_bot_reviews();
             CommandAfterDispatch::ExitCommandMode
         }
         CommandKind::Diff => {
@@ -1960,6 +1976,26 @@ mod command_tests {
         assert_eq!(
             command_spec_for("reviewed").map(|spec| spec.kind),
             Some(CommandKind::ToggleShowReviewed)
+        );
+    }
+
+    #[test]
+    fn parses_every_bot_reviews_visibility_command_form() {
+        assert_eq!(
+            command_spec_for("set botreviews").map(|spec| spec.kind),
+            Some(CommandKind::SetShowBotReviews(true))
+        );
+        assert_eq!(
+            command_spec_for("set nobotreviews").map(|spec| spec.kind),
+            Some(CommandKind::SetShowBotReviews(false))
+        );
+        assert_eq!(
+            command_spec_for("set botreviews!").map(|spec| spec.kind),
+            Some(CommandKind::ToggleShowBotReviews)
+        );
+        assert_eq!(
+            command_spec_for("botreviews").map(|spec| spec.kind),
+            Some(CommandKind::ToggleShowBotReviews)
         );
     }
 

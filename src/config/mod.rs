@@ -187,6 +187,10 @@ pub struct AppConfig {
     /// the file tree and the diff. Defaults to false; toggle at runtime with
     /// `:set vendored!`.
     pub show_vendored: Option<bool>,
+    /// Whether review summaries written by bots (Copilot, CI integrations)
+    /// render in PR mode. Defaults to false; toggle at runtime with
+    /// `:set botreviews!`.
+    pub show_bot_reviews: Option<bool>,
     pub diff_view: Option<String>,
     /// Inline commit selector display order: `"descending"` (newest-first,
     /// the default) or `"ascending"` (oldest-first).
@@ -276,6 +280,7 @@ const KNOWN_KEYS: &[&str] = &[
     "show_reviewed",
     "show_generated",
     "show_vendored",
+    "show_bot_reviews",
     "diff_view",
     "commit_order",
     "initial_commit_selection",
@@ -613,6 +618,7 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
         show_reviewed: read_bool(table, "show_reviewed", &mut warnings),
         show_generated: read_bool(table, "show_generated", &mut warnings),
         show_vendored: read_bool(table, "show_vendored", &mut warnings),
+        show_bot_reviews: read_bool(table, "show_bot_reviews", &mut warnings),
         diff_view: read_enum(
             table,
             "diff_view",
@@ -1241,6 +1247,14 @@ mod tests {
         let cfg = outcome.config.as_ref().expect("config");
         assert_eq!(cfg.show_generated, Some(true));
         assert_eq!(cfg.show_vendored, Some(true));
+        assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
+    fn should_parse_show_bot_reviews() {
+        let outcome = parse_config("show_bot_reviews = true\n");
+        let cfg = outcome.config.as_ref().expect("config");
+        assert_eq!(cfg.show_bot_reviews, Some(true));
         assert!(outcome.warnings.is_empty());
     }
 

@@ -275,6 +275,9 @@ In command mode,
 | `:comments unresolved` | Show unresolved remote comments (PR mode, default) |
 | `:comments all` | Show all remote comments including resolved and outdated |
 | `:comments hide` | Hide remote comments in PR mode |
+| `:set botreviews` | Show review summaries written by bots, e.g. Copilot overviews (PR mode) |
+| `:set nobotreviews` | Hide bot review summaries (the default) |
+| `:set botreviews!` / `:botreviews` | Toggle bot review summaries |
 | `:set wrap` | Enable line wrap in diff view |
 | `:set wrap!` (`:wrap`) | Toggle line wrap in diff view |
 | `:set relativenumber` / `:set norelativenumber` | Enable / disable relative rendered-row numbers |

@@ -625,6 +625,7 @@ mod tests {
             state: RemoteReviewState::ChangesRequested,
             created_at: None,
             url: "https://example.com/review".to_string(),
+            is_bot: false,
         }];
         app.forge_review_threads = vec![RemoteReviewThread {
             id: "thread-1".to_string(),

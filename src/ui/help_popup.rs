@@ -806,6 +806,13 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                "  :set botreviews",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  Show bot review summaries (nobotreviews hides, botreviews! toggles)"),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  :submit       ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),

@@ -100,9 +100,16 @@ pub struct BbUser {
     pub uuid: String,
     #[serde(default)]
     pub account_id: String,
+    /// `user`, or `app_user` for Connect/Forge apps and other integrations.
+    #[serde(default, rename = "type")]
+    pub kind: String,
 }
 
 impl BbUser {
+    pub fn is_bot(&self) -> bool {
+        self.kind == "app_user"
+    }
+
     /// Human-facing handle. Cloud leaves `username` blank, so fall through to
     /// `display_name` and finally the opaque uuid rather than rendering "".
     pub fn label(&self) -> Option<String> {
@@ -504,6 +511,7 @@ pub fn review_summaries(comments: &[BbComment]) -> Vec<RemoteReviewSummary> {
             state: RemoteReviewState::Commented,
             created_at: comment.created_on,
             url: comment.links.html_href(),
+            is_bot: comment.user.is_bot(),
         })
         .collect()
 }
@@ -905,6 +913,20 @@ mod tests {
         assert_eq!(summaries[0].body, "LGTM overall");
         assert_eq!(summaries[0].author.as_deref(), Some("Alice"));
         assert_eq!(summaries[0].state, RemoteReviewState::Commented);
+        assert!(!summaries[0].is_bot);
+    }
+
+    #[test]
+    fn should_flag_app_user_general_comments_as_bot_summaries() {
+        // given
+        let json = r#"{ "values": [
+          { "id": 1, "content": { "raw": "scan report" },
+            "user": { "display_name": "Scanner", "type": "app_user" }, "parent": null }
+        ] }"#;
+        // when
+        let summaries = review_summaries(&comments_of(json));
+        // then
+        assert!(summaries[0].is_bot);
     }
 
     #[test]
