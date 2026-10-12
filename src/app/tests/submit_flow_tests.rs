@@ -1214,6 +1214,7 @@ fn should_still_show_draft_submitted_comments_after_refetch_prunes_them() {
         Ok(Vec::new()),
         Ok(vec![crate::forge::remote_comments::RemoteReviewSummary {
             id: "draft-1".to_string(),
+            is_bot: false,
             author: Some("me".to_string()),
             body: "overall draft".to_string(),
             state: crate::forge::remote_comments::RemoteReviewState::Pending,
@@ -1783,6 +1784,7 @@ fn should_yank_remote_review_summary() {
         state: RemoteReviewState::Approved,
         created_at: None,
         url: "https://example.com/review-1".into(),
+        is_bot: false,
     }];
     app.rebuild_annotations();
 

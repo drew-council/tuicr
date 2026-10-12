@@ -67,7 +67,7 @@ impl App {
         // Reset remote-comment state on every PR mode entry; the new PR's
         // threads will be fetched separately by spawn_pr_threads_fetch.
         self.forge_review_threads = Vec::new();
-        self.forge_review_summaries = Vec::new();
+        self.set_forge_review_summaries(Vec::new());
         self.forge_review_threads_loading = false;
         self.pr_threads_rx = None;
         // Results fetched for the previous PR must not land in this one.
@@ -174,7 +174,7 @@ impl App {
         self.parked_vcs = None;
         self.pr_info = None;
         self.forge_review_threads = Vec::new();
-        self.forge_review_summaries = Vec::new();
+        self.set_forge_review_summaries(Vec::new());
         self.forge_review_threads_loading = false;
         self.pr_threads_rx = None;
         self.pr_reload_state = None;
@@ -1374,10 +1374,10 @@ impl App {
                 }
                 match summaries {
                     Ok(s) => {
-                        self.forge_review_summaries = s;
+                        self.set_forge_review_summaries(s);
                     }
                     Err(e) => {
-                        self.forge_review_summaries = Vec::new();
+                        self.set_forge_review_summaries(Vec::new());
                         had_error = true;
                         // Only surface the summary error if the threads call
                         // succeeded — otherwise the user already got a
@@ -1435,6 +1435,58 @@ impl App {
         self.session.remote_comments_visibility = visibility;
         self.rebuild_annotations();
         true
+    }
+
+    /// Store freshly fetched review summaries and derive the visible list.
+    /// Callers rebuild annotations afterwards, as they already do for threads.
+    pub(in crate::app) fn set_forge_review_summaries(
+        &mut self,
+        summaries: Vec<crate::forge::remote_comments::RemoteReviewSummary>,
+    ) {
+        self.fetched_review_summaries = summaries;
+        self.apply_bot_review_filter();
+    }
+
+    fn apply_bot_review_filter(&mut self) {
+        let show_bots = self.show_bot_reviews;
+        self.forge_review_summaries = self
+            .fetched_review_summaries
+            .iter()
+            .filter(|summary| show_bots || !summary.is_bot)
+            .cloned()
+            .collect();
+    }
+
+    /// Apply the `show_bot_reviews` config default at startup, silently.
+    pub fn init_show_bot_reviews(&mut self, show: bool) {
+        self.show_bot_reviews = show;
+        self.apply_bot_review_filter();
+        self.rebuild_annotations();
+    }
+
+    pub fn set_show_bot_reviews(&mut self, show: bool) {
+        self.show_bot_reviews = show;
+        self.apply_bot_review_filter();
+        self.rebuild_annotations();
+        let bots = self
+            .fetched_review_summaries
+            .iter()
+            .filter(|summary| summary.is_bot)
+            .count();
+        if bots == 0 {
+            let state = if show { "shown" } else { "hidden" };
+            self.set_message(format!("Bot reviews {state} \u{00b7} none on this PR"));
+        } else if show {
+            self.set_message(format!("Showing {bots} bot reviews"));
+        } else {
+            self.set_message(format!(
+                "Hiding {bots} bot reviews \u{00b7} :set botreviews shows them again"
+            ));
+        }
+    }
+
+    pub fn toggle_show_bot_reviews(&mut self) {
+        self.set_show_bot_reviews(!self.show_bot_reviews);
     }
 
     /// Seed a fresh PR session with the configured `pr_comments_visibility`
@@ -1662,9 +1714,9 @@ impl App {
             }
         }
         match summaries {
-            Ok(s) => self.forge_review_summaries = s,
+            Ok(s) => self.set_forge_review_summaries(s),
             Err(e) => {
-                self.forge_review_summaries = Vec::new();
+                self.set_forge_review_summaries(Vec::new());
                 if fetched {
                     self.set_warning(format!("Failed to load remote reviews: {e}"));
                 }

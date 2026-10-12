@@ -141,6 +141,9 @@ fn handle_mode_independent_action(app: &mut App, invocation: &Invocation) -> boo
         Action::ShowReviewed => app.set_show_reviewed(true),
         Action::HideReviewed => app.set_show_reviewed(false),
         Action::ToggleShowReviewed => app.toggle_show_reviewed(),
+        Action::ShowBotReviews => app.set_show_bot_reviews(true),
+        Action::HideBotReviews => app.set_show_bot_reviews(false),
+        Action::ToggleShowBotReviews => app.toggle_show_bot_reviews(),
         Action::SetMinimalUi => app.set_minimal_ui(true),
         Action::SetNoMinimalUi => app.set_minimal_ui(false),
         Action::ToggleMinimalUi => app.toggle_minimal_ui(),
@@ -2057,6 +2060,23 @@ mod command_tests {
         assert_eq!(runs("set worddiff"), Some(Action::SetWordDiff.into()));
         assert_eq!(runs("set noworddiff"), Some(Action::SetNoWordDiff.into()));
         assert_eq!(runs("set worddiff!"), Some(Action::ToggleWordDiff.into()));
+    }
+
+    #[test]
+    fn parses_every_bot_reviews_visibility_command_form() {
+        assert_eq!(runs("set botreviews"), Some(Action::ShowBotReviews.into()));
+        assert_eq!(
+            runs("set nobotreviews"),
+            Some(Action::HideBotReviews.into())
+        );
+        assert_eq!(
+            runs("set botreviews!"),
+            Some(Action::ToggleShowBotReviews.into())
+        );
+        assert_eq!(
+            runs("botreviews"),
+            Some(Action::ToggleShowBotReviews.into())
+        );
     }
 
     #[test]

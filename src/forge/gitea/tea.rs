@@ -29,7 +29,7 @@ use crate::error::{Result, TuicrError};
 use crate::forge::local_git::read_blob;
 use crate::forge::remote_comments::{
     RemoteCommentSide, RemoteReviewComment, RemoteReviewState, RemoteReviewSummary,
-    RemoteReviewThread,
+    RemoteReviewThread, is_bot_login,
 };
 use crate::forge::remote_url::{
     parse_scp_like_remote, read_ssh_hostname, strip_port, strip_scheme, trim_url_suffix,
@@ -1036,13 +1036,17 @@ where
             // Bare approvals carry no prose; the review-summary area only
             // renders bodies.
             .filter(|review| !review.body.trim().is_empty())
-            .map(|review| RemoteReviewSummary {
-                id: review.id.to_string(),
-                author: GiteaUser::login(review.user),
-                body: review.body,
-                state: parse_review_state(&review.state),
-                created_at: review.submitted_at,
-                url: review.html_url,
+            .map(|review| {
+                let author = GiteaUser::login(review.user);
+                RemoteReviewSummary {
+                    id: review.id.to_string(),
+                    is_bot: is_bot_login(author.as_deref()),
+                    author,
+                    body: review.body,
+                    state: parse_review_state(&review.state),
+                    created_at: review.submitted_at,
+                    url: review.html_url,
+                }
             })
             .collect())
     }

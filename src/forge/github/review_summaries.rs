@@ -38,12 +38,16 @@ use serde::Deserialize;
 
 use crate::error::{Result, TuicrError};
 use crate::forge::github::review_threads::GhPageInfo;
-use crate::forge::remote_comments::{RemoteReviewState, RemoteReviewSummary};
+use crate::forge::remote_comments::{RemoteReviewState, RemoteReviewSummary, is_bot_login};
 
 #[derive(Debug, Deserialize)]
 struct GhAuthor {
     #[serde(default)]
     login: Option<String>,
+    /// GraphQL `Actor` implementor: `User`, `Bot`, `Mannequin`, ...
+    /// Copilot's reviewer is a `Bot` whose login has no `[bot]` suffix.
+    #[serde(default, rename = "__typename")]
+    typename: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +135,9 @@ pub(crate) fn parse_graphql_page(json: &str) -> Result<ParsedReviewsPage> {
         if raw.body.trim().is_empty() {
             continue;
         }
+        let is_bot = raw.author.as_ref().is_some_and(|a| {
+            a.typename.as_deref() == Some("Bot") || is_bot_login(a.login.as_deref())
+        });
         summaries.push(RemoteReviewSummary {
             id: raw.id,
             author: raw.author.and_then(|a| a.login),
@@ -142,6 +149,7 @@ pub(crate) fn parse_graphql_page(json: &str) -> Result<ParsedReviewsPage> {
                 .unwrap_or(RemoteReviewState::Commented),
             created_at: raw.submitted_at,
             url: raw.url.unwrap_or_default(),
+            is_bot,
         });
     }
     Ok(ParsedReviewsPage {
@@ -166,7 +174,7 @@ pub(crate) fn build_query(after_cursor: Option<&str>) -> String {
           id
           state
           body
-          author {{ login }}
+          author {{ __typename login }}
           submittedAt
           url
         }}
@@ -275,6 +283,24 @@ mod tests {
     }
 
     #[test]
+    fn should_flag_bot_reviewers_by_typename_or_login_suffix() {
+        // given — Copilot is a `Bot` with a plain login; Apps sign `[bot]`
+        let json = r##"{ "data": { "repository": { "pullRequest": { "reviews": { "nodes": [
+            { "id": "PRR_copilot", "body": "overview",
+              "author": { "__typename": "Bot", "login": "copilot-pull-request-reviewer" } },
+            { "id": "PRR_app", "body": "report", "author": { "login": "coderabbitai[bot]" } },
+            { "id": "PRR_human", "body": "LGTM",
+              "author": { "__typename": "User", "login": "alice" } },
+            { "id": "PRR_ghost", "body": "deleted account", "author": null }
+        ] } } } } }"##;
+        // when
+        let parsed = parse_graphql_page(json).unwrap();
+        // then
+        let bots: Vec<bool> = parsed.summaries.iter().map(|s| s.is_bot).collect();
+        assert_eq!(bots, vec![true, true, false, false]);
+    }
+
+    #[test]
     fn should_tolerate_missing_repository_object() {
         // given/when
         let parsed = parse_graphql_page(NULL_REPO_JSON).unwrap();
@@ -290,6 +316,7 @@ mod tests {
         // then
         assert!(q.contains("reviews(first: 100)"));
         assert!(!q.contains("after: $after"));
+        assert!(q.contains("author { __typename login }"));
     }
 
     #[test]

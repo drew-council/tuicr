@@ -38,6 +38,7 @@ show_pr_comments = true
 pr_comments_visibility = "unresolved"
 show_commits = true
 show_reviewed = true
+show_bot_reviews = false
 mouse = true
 mouse_scroll_lines = 3
 leader = ","
@@ -130,6 +131,7 @@ count = true
 | `pr_comments_visibility`   | `unresolved` | Default visibility for PR review comment threads: `unresolved` (default), `all` (resolved/outdated threads shown muted), or `hide`. Seeds each review that starts at the default; `:comments` still switches mid-session and a restored session keeps its saved visibility. |
 | `show_commits`             | `true`       | Whether the inline commit selector pane is shown when a multi-commit review opens, including reviews opened later from the selector or a PR. Toggle it for the current review with `<leader>s` or `:set commits!`. |
 | `show_reviewed`            | `true`       | Whether files already marked reviewed appear in the file tree and the diff. Set `false` to start a session showing only what is left. Toggle with `:set reviewed!`. |
+| `show_bot_reviews`         | `false`      | Whether PR review summaries written by bots (Copilot overviews, CI integrations) render under Review Comments. Their inline threads are unaffected; `:comments` governs those. Toggle with `:set botreviews!`. |
 | `mouse`                    | `true`       | Wheel scrolling, clicks, and drag-to-select.                                                                                                               |
 | `mouse_scroll_lines`       | `3`          | Lines scrolled per mouse wheel tick in the diff, file list, comment list, help, and summary views; the commit list moves its cursor this many rows. Must be between 1 and 100; other values are ignored with a startup warning. |
 | `leader`                   | `;`          | Single-character prefix for panel focus, sidebar toggles, and review-comment shortcuts, written `<leader>` in [`[keys]`](#keys). Invalid multi-character values are ignored with a startup warning. |
@@ -343,6 +345,9 @@ such as `toggle-select` in lists and `comment-range` in visual selection.
 | `show-reviewed`           | Show reviewed files                                                | `:set reviewed`               |
 | `hide-reviewed`           | Hide reviewed files                                                | `:set noreviewed`             |
 | `toggle-show-reviewed`    | Show or hide reviewed files                                        | `:reviewed`, `:set reviewed!` |
+| `show-bot-reviews`        | Show bot review summaries                                          | `:set botreviews`             |
+| `hide-bot-reviews`        | Hide bot review summaries                                          | `:set nobotreviews`           |
+| `toggle-show-bot-reviews` | Show or hide bot review summaries                                  | `:botreviews`, `:set botreviews!` |
 | `set-minimal`             | Use the minimal UI                                                 | `:set minimal`                |
 | `set-nominimal`           | Use the full UI                                                    | `:set nominimal`              |
 | `toggle-minimal`          | Toggle the minimal UI                                              | `:set minimal!`               |
