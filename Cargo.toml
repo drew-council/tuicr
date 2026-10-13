@@ -69,6 +69,18 @@ tar = "0.4"
 # `tuicr update`: read the published Windows .zip archive.
 zip = { version = "4", default-features = false, features = ["deflate-flate2"] }
 
+# AI review guide: orders PR files for review and summarizes the change via
+# Gemini on Vertex AI. Only the PredictionService client is compiled.
+google-cloud-aiplatform-v1 = { version = "1", default-features = false, features = ["prediction-service"] }
+google-cloud-auth = "1"
+# The Vertex client is async; the guide runs it on a current-thread runtime
+# inside its own background thread.
+tokio = { version = "1", features = ["rt", "time"] }
+# ureq brings rustls with `ring` and the Google crates add `aws-lc-rs`; with
+# both compiled in, rustls cannot pick a process default, so the guide
+# installs one explicitly.
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
+
 # Syntax highlighting
 syntect = "5.2"
 two-face = { version = "0.5", default-features = false, features = ["syntect-default-fancy"] }

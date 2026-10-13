@@ -82,6 +82,15 @@ comments_header = "## Local tuicr Comments"
 remote_comments_header = "## Existing GitHub Comments"
 legend = true
 session_header = true
+
+[review_guide]
+enabled = false
+model = "gemini-3.8-flash"
+thinking = "low"
+location = "global"
+timeout_secs = 60
+# project = "my-gcp-project"            # default: GOOGLE_CLOUD_PROJECT, then the credentials' quota project
+# credentials_file = "~/creds.json"     # default: Application Default Credentials
 ```
 
 ## Options
@@ -336,6 +345,29 @@ The example above produces an export that opens directly on the comment list:
 ### Relationship to `export_legend`
 
 The top-level `export_legend` key predates this section and still works. When both are set, `legend` wins. When `[export]` omits `legend`, `export_legend` stays in force, so adding an `[export]` block to trim the intro will not switch the legend back on.
+
+## Review guide
+
+Settings under the `[review_guide]` section turn on an AI review guide for pull requests. When a pull request opens, tuicr sends its title, description, and diff to Gemini on Vertex AI. The model orders the changed files for review, putting API definitions before their callers, interfaces before implementations, and implementations before tests. It also writes a short overview.
+
+The request starts as soon as the diff has been fetched and runs in the background, so the pull request opens at the usual speed in directory order. When the guide lands, the file tree and diff reorder to follow it, and the overview and numbered steps appear at the top of the PR description. The file tree stays a directory tree: each directory is placed by the earliest step among its files. Guides are cached per pull request head, so reopening the same head makes no request. A failed request leaves the default order and shows a warning.
+
+Authentication uses Google Cloud credentials (`gcloud auth application-default login`) unless `credentials_file` names an `authorized_user` or `service_account` JSON file. Neither the project nor the credentials need to appear in the config file.
+
+```toml
+[review_guide]
+enabled = true
+```
+
+| Key                | Default            | Description                                                                                                                       |
+| ------------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`          | `false`            | Request a review guide whenever a pull request opens.                                                                             |
+| `model`            | `gemini-3.8-flash` | Vertex AI publisher model id.                                                                                                     |
+| `thinking`         | `low`              | Gemini thinking level: `minimal`, `low`, `medium`, or `high`.                                                                     |
+| `project`          | (unset)            | Google Cloud project billed for the request. Defaults to `GOOGLE_CLOUD_PROJECT`, then the credentials file's `quota_project_id`. |
+| `location`         | `global`           | Vertex AI location. `global` serves the current Gemini models.                                                                    |
+| `credentials_file` | (unset)            | Credentials JSON to use instead of Application Default Credentials. A leading `~/` expands to the home directory.                 |
+| `timeout_secs`     | `60`               | Abandon the request after this many seconds.                                                                                      |
 
 ## .tuicrignore
 

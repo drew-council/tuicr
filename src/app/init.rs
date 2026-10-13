@@ -1,10 +1,11 @@
 use super::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct PrDisplayOptions {
     show_checks: bool,
     show_comments: bool,
     comments_visibility: Option<crate::forge::remote_comments::PrCommentsVisibility>,
+    review_guide: Option<crate::config::ReviewGuideConfig>,
 }
 
 impl App {
@@ -29,6 +30,7 @@ impl App {
                     show_checks: options.show_pr_checks,
                     show_comments: options.show_pr_comments,
                     comments_visibility: options.pr_comments_visibility,
+                    review_guide: options.review_guide.clone(),
                 },
             );
         }
@@ -567,6 +569,9 @@ impl App {
             show_bot_reviews: false,
             forge_review_threads_loading: false,
             pr_threads_rx: None,
+            review_guide_config: None,
+            review_guide: None,
+            review_guide_rx: None,
             forge_config: crate::config::ForgeConfig::default(),
             username: crate::model::comment::DEFAULT_AUTHOR.to_string(),
             submit_state: None,
@@ -835,6 +840,7 @@ impl App {
                 show_checks: false,
                 show_comments: true,
                 comments_visibility: None,
+                review_guide: None,
             },
         )
     }
@@ -854,8 +860,9 @@ impl App {
         use crate::forge::gitea::tea::parse_pull_request_target_gitea;
         use crate::forge::github::gh::parse_pull_request_target;
         use crate::forge::gitlab::glab::parse_pull_request_target_gitlab;
-        use crate::forge::pr_open::open_pull_request;
+        use crate::forge::pr_open::open_pull_request_with_guide;
         use crate::forge::traits::ForgeKind;
+        use crate::review_guide::ReviewGuideLauncher;
 
         // Bitbucket first: its URL shape (`/pull-requests/<n>`) is distinct,
         // and the GitHub parser would otherwise claim the host. Gitea next:
@@ -929,11 +936,23 @@ impl App {
             display_options.show_comments,
         );
         let highlighter = theme.syntax_highlighter();
-        let mut opened = open_pull_request(
+        let (guide_launcher, guide_rx) = match display_options.review_guide.clone() {
+            Some(config) => {
+                let (tx, rx) = std::sync::mpsc::channel();
+                let cache_dir = crate::review_guide::default_cache_dir();
+                (
+                    Some(ReviewGuideLauncher::new(config, cache_dir, tx)),
+                    Some(rx),
+                )
+            }
+            None => (None, None),
+        };
+        let mut opened = open_pull_request_with_guide(
             backend.as_ref(),
             parsed,
             local_checkout_for_target.as_deref(),
             highlighter,
+            guide_launcher,
         )?;
         // Seed before the persisted-session restore, which replaces the
         // fresh session wholesale, so a saved visibility always wins.
@@ -976,6 +995,8 @@ impl App {
         )?;
         app.show_pr_checks = display_options.show_checks;
         app.show_pr_comments = display_options.show_comments;
+        app.review_guide_config = display_options.review_guide;
+        app.review_guide_rx = guide_rx;
         // `build` has no slot for the head's `.gitattributes` and has already
         // tagged the files without them.
         app.set_pr_attributes(attributes);

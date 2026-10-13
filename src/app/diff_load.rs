@@ -1877,6 +1877,7 @@ mod tests {
             commit_selection: CommitSelectionStart::All,
             pr_target: None,
             repo_url_override: None,
+            review_guide: None,
         };
         let captured = options.vcs_open_options();
         assert_eq!(captured.git_backend_preference, GitBackendPreference::Cli);

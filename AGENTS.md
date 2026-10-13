@@ -30,6 +30,9 @@ src/
 │   └── lua/             # setup.lua (buffer, autocmds, message capture), begin.lua, get_state.lua
 ├── review_store.rs      # Library API for session listing/loading and shared comment insertion
 ├── review_cli.rs        # Non-interactive `tuicr review` subcommands over ReviewStore
+├── review_guide/        # AI review guide: Gemini on Vertex AI orders PR files + writes an overview
+│   ├── mod.rs           # Prompt, response normalization, per-head cache, background launcher
+│   └── vertex.rs        # PredictionService call; project/credential resolution (never in source)
 ├── update.rs            # Public update facade
 ├── update/
 │   ├── check.rs         # Lightweight crates.io version checks for the TUI badge
@@ -270,6 +273,7 @@ Repository-managed agent integrations:
 - `arboard`: Clipboard access
 - `edtui`: Built-in vim engine for the comment box (`comment_vim_backend = "builtin"`)
 - `rmpv`: MessagePack codec for the embedded Neovim comment editor's RPC channel
+- `google-cloud-aiplatform-v1` (`prediction-service` only) + `google-cloud-auth` + `tokio` + `rustls`: AI review guide request (`[review_guide]`)
 - `ignore`: Gitignore-style matcher for `.tuicrignore`
 - `chrono`: Timestamps
 - `thiserror` + `anyhow`: Error handling
@@ -417,6 +421,8 @@ These are non-obvious things the implementation chain hit. Worth preserving for 
 23. **PR `.gitattributes` come from the PR head, never the working tree.** `forge::attributes::fetch_pr_attributes` lists the files that exist at `head_sha` with one `git --literal-pathspecs ls-tree --full-tree` over each changed path's ancestor directories (`--full-tree` because `local_checkout_path()` is the launch directory, which can be a subdirectory), then reads them with `read_blob`. When the clone lacks the head it asks the forge for the root file only: probing every directory would cost a round trip apiece. `.git/info/attributes` still applies, via `git rev-parse --git-path`, because it is per-clone config rather than part of a revision. `set_pr_attributes` invalidates the tag cache, since a same-head reload keeps the file set and the path fingerprint alone would keep stale tags, and the cache also records whether it came from a PR so leaving PR mode for the same files re-reads the working tree.
 
 24. **Bot review summaries are filtered at assignment, not at render.** `App::fetched_review_summaries` holds everything the forge returned; `forge_review_summaries` is the visible subset (`is_bot` dropped unless `show_bot_reviews`, `:set botreviews`). Every renderer and `summary_idx` reads the visible list, so new fetch paths must go through `set_forge_review_summaries`. Assigning `forge_review_summaries` directly skips the filter. GitHub flags bots by GraphQL `author { __typename }` == `Bot`, because Copilot's reviewer login has no `[bot]` suffix. Bitbucket uses `user.type == "app_user"`, and Gitea falls back to `is_bot_login`. Inline bot threads are deliberately unaffected; `:comments` governs them.
+
+25. **The AI review guide lands after the PR opens.** `fetch_pr_data_with_guide` launches it the moment the diff arrives, so it overlaps the rest of the load. `poll_review_guide_events` holds the result while a PR open or reload is in flight, because a cached guide can answer before its PR is entered. Ordering happens in `App::apply_review_guide` at the end of `sort_files_by_directory`, which keeps subtrees contiguous: each directory sorts by its earliest guide step. The same hook prepends the overview to `pr_info.details.body`, idempotently, so a same-head reload's fresh description gets it back. A guide arriving mid-review goes through `reorder_files_preserving_view`, which measures the cursor *before* installing the guide (the description grows) and remaps `GapId.file_idx`.
 
 ### Keeping Docs Updated
 

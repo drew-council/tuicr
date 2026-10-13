@@ -22,6 +22,7 @@ use crate::forge::traits::{
 };
 use crate::gitattributes::AttributesSnapshot;
 use crate::model::{DiffFile, FilePatch, ReviewSession, SessionDiffSource};
+use crate::review_guide::ReviewGuideLauncher;
 use crate::syntax::SyntaxHighlighter;
 use crate::tuicrignore;
 use crate::vcs::diff_parser::parse_file_patches;
@@ -74,8 +75,20 @@ pub fn open_pull_request(
     local_checkout: Option<&Path>,
     highlighter: &SyntaxHighlighter,
 ) -> Result<OpenedPullRequest> {
+    open_pull_request_with_guide(backend, target, local_checkout, highlighter, None)
+}
+
+/// [`open_pull_request`], also starting an AI review guide request as soon as
+/// the diff is fetched (see [`fetch_pr_data_with_guide`]).
+pub fn open_pull_request_with_guide(
+    backend: &dyn ForgeBackend,
+    target: PullRequestTarget,
+    local_checkout: Option<&Path>,
+    highlighter: &SyntaxHighlighter,
+    guide: Option<ReviewGuideLauncher>,
+) -> Result<OpenedPullRequest> {
     let (details, patches, commits, review_metadata, pr_info, attributes) =
-        fetch_pr_data(backend, target)?;
+        fetch_pr_data_with_guide(backend, target, guide)?;
     prepare_open_pr(
         details,
         patches,
@@ -97,9 +110,24 @@ pub fn open_pull_request(
 /// only, we still return the diff so PR review proceeds without the
 /// inline selector. The first two calls remain required.
 pub fn fetch_pr_data(backend: &dyn ForgeBackend, target: PullRequestTarget) -> Result<PrFetchData> {
+    fetch_pr_data_with_guide(backend, target, None)
+}
+
+/// [`fetch_pr_data`], launching `guide` the moment the diff arrives. The guide
+/// request then runs on its own thread, overlapping the commit, review
+/// metadata, and attribute fetches and the main-thread parse, so it adds
+/// nothing to the time it takes the PR to open.
+pub fn fetch_pr_data_with_guide(
+    backend: &dyn ForgeBackend,
+    target: PullRequestTarget,
+    guide: Option<ReviewGuideLauncher>,
+) -> Result<PrFetchData> {
     let pr_info = backend.get_pull_request_info(target)?;
     let details = pr_info.details.clone();
     let patches = backend.get_pull_request_diff(&details)?;
+    if let Some(guide) = guide {
+        guide.launch(&pr_info, &patches);
+    }
     let commits = backend
         .list_pull_request_commits(&details)
         .unwrap_or_default();

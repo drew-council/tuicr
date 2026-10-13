@@ -82,6 +82,52 @@ impl Default for ForgeConfig {
     }
 }
 
+/// Thinking levels accepted by `review_guide.thinking`.
+pub const REVIEW_GUIDE_THINKING_LEVELS: &[&str] = &["minimal", "low", "medium", "high"];
+
+/// `[review_guide]` section: an AI-generated review order and overview for
+/// pull requests, produced by Gemini on Vertex AI.
+///
+/// Nothing here identifies a Google Cloud account. `project` and
+/// `credentials_file` are optional and fall back to the environment and the
+/// Application Default Credentials file, so a shared config never has to name
+/// either.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct ReviewGuideConfig {
+    /// Request a guide whenever a pull request opens. Defaults to false.
+    pub enabled: bool,
+    /// Vertex AI publisher model id.
+    pub model: String,
+    /// Gemini thinking level: `"minimal"`, `"low"`, `"medium"` or `"high"`.
+    pub thinking: String,
+    /// Google Cloud project billed for the request. Defaults to
+    /// `GOOGLE_CLOUD_PROJECT`, then the credentials file's quota project.
+    pub project: Option<String>,
+    /// Vertex AI location. `global` serves the current Gemini models.
+    pub location: String,
+    /// Credentials JSON (`authorized_user` or `service_account`). Defaults to
+    /// Application Default Credentials discovery. A leading `~/` expands to
+    /// the home directory.
+    pub credentials_file: Option<PathBuf>,
+    /// Give up on the request after this many seconds.
+    pub timeout_secs: u64,
+}
+
+impl Default for ReviewGuideConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            model: "gemini-3.8-flash".to_string(),
+            thinking: "low".to_string(),
+            project: None,
+            location: "global".to_string(),
+            credentials_file: None,
+            timeout_secs: 60,
+        }
+    }
+}
+
 const DEFAULT_EXPORT_INTRO: &str =
     "I reviewed your code and have the following comments. Please address them.";
 
@@ -245,6 +291,8 @@ pub struct AppConfig {
     /// `[export]` section settings. `None` means "no override"; downstream
     /// code should treat it as `ExportConfig::default()`.
     pub export: Option<ExportConfig>,
+    /// `[review_guide]` section settings. `None` when the section is absent.
+    pub review_guide: Option<ReviewGuideConfig>,
 }
 
 impl AppConfig {
@@ -307,9 +355,20 @@ const KNOWN_KEYS: &[&str] = &[
     "username",
     "forge",
     "export",
+    "review_guide",
 ];
 
 const FORGE_KNOWN_KEYS: &[&str] = &["comment_type_prefix"];
+
+const REVIEW_GUIDE_KNOWN_KEYS: &[&str] = &[
+    "enabled",
+    "model",
+    "thinking",
+    "project",
+    "location",
+    "credentials_file",
+    "timeout_secs",
+];
 
 const EXPORT_KNOWN_KEYS: &[&str] = &[
     "intro",
@@ -669,6 +728,9 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
         export: table
             .get("export")
             .and_then(|v| parse_export(v, &mut warnings)),
+        review_guide: table
+            .get("review_guide")
+            .and_then(|v| parse_review_guide(v, &mut warnings)),
     };
 
     for key in table.keys() {
@@ -749,6 +811,81 @@ fn parse_export(value: &Value, warnings: &mut Vec<String>) -> Option<ExportConfi
     } else {
         Some(cfg)
     }
+}
+
+/// Parse the `[review_guide]` section. Unset keys keep their defaults; an
+/// invalid value warns and keeps the default too.
+fn parse_review_guide(value: &Value, warnings: &mut Vec<String>) -> Option<ReviewGuideConfig> {
+    const SECTION: &str = "review_guide";
+    let Some(table) = value.as_table() else {
+        warnings
+            .push("Warning: Config key 'review_guide' must be a table; ignoring value".to_string());
+        return None;
+    };
+
+    for key in table.keys() {
+        if !REVIEW_GUIDE_KNOWN_KEYS.contains(&key.as_str()) {
+            warnings.push(format!(
+                "Warning: Unknown config key 'review_guide.{key}', ignoring"
+            ));
+        }
+    }
+
+    let mut cfg = ReviewGuideConfig::default();
+    if let Some(enabled) = read_section_bool(table, SECTION, "enabled", warnings) {
+        cfg.enabled = enabled;
+    }
+    if let Some(model) = read_section_string(table, SECTION, "model", warnings)
+        .filter(|model| !model.trim().is_empty())
+    {
+        cfg.model = model.trim().to_string();
+    }
+    if let Some(thinking) = read_section_string(table, SECTION, "thinking", warnings) {
+        if REVIEW_GUIDE_THINKING_LEVELS.contains(&thinking.as_str()) {
+            cfg.thinking = thinking;
+        } else {
+            warnings.push(format!(
+                "Warning: Config key 'review_guide.thinking' must be one of {}; got \"{thinking}\", ignoring",
+                REVIEW_GUIDE_THINKING_LEVELS.join(", ")
+            ));
+        }
+    }
+    cfg.project = read_section_string(table, SECTION, "project", warnings)
+        .map(|project| project.trim().to_string())
+        .filter(|project| !project.is_empty());
+    if let Some(location) = read_section_string(table, SECTION, "location", warnings)
+        .filter(|location| !location.trim().is_empty())
+    {
+        cfg.location = location.trim().to_string();
+    }
+    cfg.credentials_file = read_section_string(table, SECTION, "credentials_file", warnings)
+        .filter(|path| !path.trim().is_empty())
+        .map(|path| expand_home(path.trim()));
+    if let Some(timeout) = table.get("timeout_secs") {
+        match timeout.as_integer() {
+            Some(secs) if secs > 0 => cfg.timeout_secs = secs as u64,
+            _ => warnings.push(
+                "Warning: Config key 'review_guide.timeout_secs' must be a positive integer; ignoring value"
+                    .to_string(),
+            ),
+        }
+    }
+
+    Some(cfg)
+}
+
+/// Expand a leading `~/` (or a bare `~`) to the home directory.
+fn expand_home(path: &str) -> PathBuf {
+    let home = || directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf());
+    if path == "~" {
+        return home().unwrap_or_else(|| PathBuf::from(path));
+    }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = home()
+    {
+        return home.join(rest);
+    }
+    PathBuf::from(path)
 }
 
 /// Like `read_bool`, but emits a `<section>.<key>` qualified warning so the
@@ -2107,6 +2244,83 @@ comment_type_prefix = false
             None
         );
         assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
+    fn should_parse_review_guide_section() {
+        let outcome = parse_config(
+            r#"[review_guide]
+enabled = true
+model = "gemini-other"
+thinking = "medium"
+project = "my-project"
+location = "us-central1"
+credentials_file = "/etc/creds.json"
+timeout_secs = 30
+"#,
+        );
+        let guide = outcome
+            .config
+            .and_then(|cfg| cfg.review_guide)
+            .expect("review_guide section should parse");
+        assert!(outcome.warnings.is_empty());
+        assert_eq!(
+            guide,
+            ReviewGuideConfig {
+                enabled: true,
+                model: "gemini-other".to_string(),
+                thinking: "medium".to_string(),
+                project: Some("my-project".to_string()),
+                location: "us-central1".to_string(),
+                credentials_file: Some(PathBuf::from("/etc/creds.json")),
+                timeout_secs: 30,
+            }
+        );
+    }
+
+    #[test]
+    fn should_default_review_guide_to_flash_low_without_account_details() {
+        let outcome = parse_config("[review_guide]\nenabled = true\n");
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert!(guide.enabled);
+        assert_eq!(guide.model, "gemini-3.8-flash");
+        assert_eq!(guide.thinking, "low");
+        assert_eq!(guide.location, "global");
+        assert_eq!(guide.project, None);
+        assert_eq!(guide.credentials_file, None);
+    }
+
+    #[test]
+    fn should_warn_on_invalid_review_guide_values_and_keep_defaults() {
+        let outcome = parse_config(
+            r#"[review_guide]
+enabled = "yes"
+thinking = "extreme"
+timeout_secs = 0
+bogus = 1
+"#,
+        );
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert_eq!(guide, ReviewGuideConfig::default());
+        assert_eq!(outcome.warnings.len(), 4);
+        assert!(
+            outcome
+                .warnings
+                .iter()
+                .any(|w| w.contains("review_guide.bogus"))
+        );
+    }
+
+    #[test]
+    fn should_expand_home_in_review_guide_credentials_file() {
+        let outcome = parse_config("[review_guide]\ncredentials_file = \"~/creds.json\"\n");
+        let path = outcome
+            .config
+            .and_then(|cfg| cfg.review_guide)
+            .and_then(|guide| guide.credentials_file)
+            .unwrap();
+        assert!(path.is_absolute());
+        assert!(path.ends_with("creds.json"));
     }
 
     #[test]
