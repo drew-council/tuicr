@@ -238,7 +238,7 @@ impl ReviewGuideLauncher {
         if let Some(guide) = cache_path.as_deref().and_then(read_cached) {
             return Ok(guide.normalized(&input.paths()));
         }
-        let prompt = build_prompt(input);
+        let prompt = build_prompt(input, self.config.system_prompt.as_deref());
         let guide = vertex::generate(&self.config, &prompt)?.normalized(&input.paths());
         if let Some(path) = cache_path {
             write_cached(&path, &guide);
@@ -258,9 +258,10 @@ pub fn default_cache_dir() -> Option<PathBuf> {
 
 fn cache_file(dir: &Path, config: &ReviewGuideConfig, key: &PrSessionKey) -> PathBuf {
     let identity = format!(
-        "v{PROMPT_VERSION}|{}|{}|{}/{}/{}#{}@{}",
+        "v{PROMPT_VERSION}|{}|{}|{}|{}/{}/{}#{}@{}",
         config.model,
         config.thinking,
+        config.system_prompt.as_deref().unwrap_or(""),
         key.repository.host,
         key.repository.owner,
         key.repository.name,
@@ -295,7 +296,10 @@ fn write_cached(path: &Path, guide: &ReviewGuide) {
     }
 }
 
-const SYSTEM_PROMPT: &str = "\
+/// Built-in system prompt. `review_guide.system_prompt` /
+/// `review_guide.system_prompt_file` replace it wholesale; the response shape
+/// is enforced by the structured-output schema, not by the prompt.
+pub const DEFAULT_SYSTEM_PROMPT: &str = "\
 You help a code reviewer work through a pull request in a logical order. \
 Group the changed files into review steps and order the steps so that each \
 one builds only on what the reviewer has already read.
@@ -331,7 +335,7 @@ Step summaries are one sentence on what to look for in that step.
 pieces fit together, and anything risky worth extra attention. Plain text, \
 no headings.";
 
-fn build_prompt(input: &GuideInput) -> Prompt {
+fn build_prompt(input: &GuideInput, system_prompt: Option<&str>) -> Prompt {
     let mut user = String::new();
     user.push_str(&format!("# Pull request: {}\n\n", input.title.trim()));
     let description = input.description.trim();
@@ -390,7 +394,11 @@ fn build_prompt(input: &GuideInput) -> Prompt {
     }
 
     Prompt {
-        system: SYSTEM_PROMPT.to_string(),
+        system: system_prompt
+            .map(str::trim)
+            .filter(|prompt| !prompt.is_empty())
+            .unwrap_or(DEFAULT_SYSTEM_PROMPT)
+            .to_string(),
         user,
     }
 }
@@ -574,10 +582,29 @@ mod tests {
             description: String::new(),
             files,
         };
-        let prompt = build_prompt(&input);
+        let prompt = build_prompt(&input, None);
+        assert_eq!(prompt.system, DEFAULT_SYSTEM_PROMPT);
         assert!(prompt.user.len() < MAX_PROMPT_PATCH_BYTES + 20_000);
         assert!(prompt.user.contains("src/f39.rs (modified)"));
         assert!(prompt.user.contains("prompt budget exhausted"));
+    }
+
+    #[test]
+    fn should_use_custom_system_prompt_when_configured() {
+        let input = GuideInput {
+            key: PrSessionKey {
+                repository: crate::forge::traits::ForgeRepository::github("github.com", "o", "r"),
+                number: 1,
+                head_sha: "abc".to_string(),
+            },
+            title: "Title".to_string(),
+            description: String::new(),
+            files: Vec::new(),
+        };
+        let prompt = build_prompt(&input, Some("  custom prompt \n"));
+        assert_eq!(prompt.system, "custom prompt");
+        let prompt = build_prompt(&input, Some("   "));
+        assert_eq!(prompt.system, DEFAULT_SYSTEM_PROMPT);
     }
 
     #[test]

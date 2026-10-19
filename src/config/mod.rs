@@ -119,6 +119,10 @@ pub struct ReviewGuideConfig {
     pub credentials_file: Option<PathBuf>,
     /// Give up on the request after this many seconds.
     pub timeout_secs: u64,
+    /// Replacement for the built-in system prompt. Set from `system_prompt`
+    /// (inline) or `system_prompt_file` (read at config load). `None` keeps
+    /// the built-in prompt.
+    pub system_prompt: Option<String>,
 }
 
 impl Default for ReviewGuideConfig {
@@ -131,6 +135,7 @@ impl Default for ReviewGuideConfig {
             location: "global".to_string(),
             credentials_file: None,
             timeout_secs: 60,
+            system_prompt: None,
         }
     }
 }
@@ -384,6 +389,8 @@ const REVIEW_GUIDE_KNOWN_KEYS: &[&str] = &[
     "location",
     "credentials_file",
     "timeout_secs",
+    "system_prompt",
+    "system_prompt_file",
 ];
 
 const EXPORT_KNOWN_KEYS: &[&str] = &[
@@ -902,6 +909,38 @@ fn parse_review_guide(value: &Value, warnings: &mut Vec<String>) -> Option<Revie
             ),
         }
     }
+    let inline_prompt = read_section_string(table, SECTION, "system_prompt", warnings)
+        .filter(|prompt| !prompt.trim().is_empty());
+    let prompt_file = read_section_string(table, SECTION, "system_prompt_file", warnings)
+        .filter(|path| !path.trim().is_empty())
+        .map(|path| expand_home(path.trim()));
+    if inline_prompt.is_some() && prompt_file.is_some() {
+        warnings.push(
+            "Warning: Config keys 'review_guide.system_prompt' and 'review_guide.system_prompt_file' are both set; using 'system_prompt'"
+                .to_string(),
+        );
+    }
+    cfg.system_prompt = match (inline_prompt, prompt_file) {
+        (Some(prompt), _) => Some(prompt),
+        (None, Some(path)) => match std::fs::read_to_string(&path) {
+            Ok(contents) if !contents.trim().is_empty() => Some(contents),
+            Ok(_) => {
+                warnings.push(format!(
+                    "Warning: Config key 'review_guide.system_prompt_file' names an empty file ({}); using the built-in prompt",
+                    path.display()
+                ));
+                None
+            }
+            Err(err) => {
+                warnings.push(format!(
+                    "Warning: Config key 'review_guide.system_prompt_file' could not be read ({}): {err}; using the built-in prompt",
+                    path.display()
+                ));
+                None
+            }
+        },
+        (None, None) => None,
+    };
 
     Some(cfg)
 }
@@ -2413,8 +2452,64 @@ timeout_secs = 30
                 location: "us-central1".to_string(),
                 credentials_file: Some(PathBuf::from("/etc/creds.json")),
                 timeout_secs: 30,
+                system_prompt: None,
             }
         );
+    }
+
+    #[test]
+    fn should_read_review_guide_system_prompt_inline() {
+        let outcome = parse_config(
+            "[review_guide]\nsystem_prompt = \"\"\"\nOrder files alphabetically.\n\"\"\"\n",
+        );
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert!(outcome.warnings.is_empty());
+        assert_eq!(
+            guide.system_prompt.as_deref(),
+            Some("Order files alphabetically.\n")
+        );
+    }
+
+    #[test]
+    fn should_read_review_guide_system_prompt_from_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prompt.txt");
+        std::fs::write(&path, "Tests right after their source file.\n").unwrap();
+        let outcome = parse_config(&format!(
+            "[review_guide]\nsystem_prompt_file = {:?}\n",
+            path.display().to_string()
+        ));
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+        assert_eq!(
+            guide.system_prompt.as_deref(),
+            Some("Tests right after their source file.\n")
+        );
+    }
+
+    #[test]
+    fn should_warn_and_keep_builtin_prompt_when_prompt_file_is_missing() {
+        let outcome = parse_config(
+            "[review_guide]\nsystem_prompt_file = \"/nonexistent/tuicr-prompt.txt\"\n",
+        );
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert_eq!(guide.system_prompt, None);
+        assert!(
+            outcome
+                .warnings
+                .iter()
+                .any(|w| w.contains("review_guide.system_prompt_file"))
+        );
+    }
+
+    #[test]
+    fn should_prefer_inline_prompt_over_prompt_file() {
+        let outcome = parse_config(
+            "[review_guide]\nsystem_prompt = \"inline\"\nsystem_prompt_file = \"/nonexistent/x.txt\"\n",
+        );
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert_eq!(guide.system_prompt.as_deref(), Some("inline"));
+        assert!(outcome.warnings.iter().any(|w| w.contains("both set")));
     }
 
     #[test]

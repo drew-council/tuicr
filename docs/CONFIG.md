@@ -93,6 +93,8 @@ location = "global"
 timeout_secs = 60
 # project = "my-gcp-project"            # default: GOOGLE_CLOUD_PROJECT, then the credentials' quota project
 # credentials_file = "~/creds.json"     # default: Application Default Credentials
+# system_prompt = """..."""              # default: built-in ordering prompt
+# system_prompt_file = "~/.config/tuicr/review_guide_prompt.txt"
 ```
 
 ## Options
@@ -397,6 +399,10 @@ enabled = true
 | `location`         | `global`           | Vertex AI location. `global` serves the current Gemini models.                                                                    |
 | `credentials_file` | (unset)            | Credentials JSON to use instead of Application Default Credentials. A leading `~/` expands to the home directory.                 |
 | `timeout_secs`     | `60`               | Abandon the request after this many seconds.                                                                                      |
+| `system_prompt`    | (built-in)         | Inline replacement for the system prompt that tells the model how to order files. Replaces the built-in prompt entirely.           |
+| `system_prompt_file` | (unset)          | Path to a text file holding the system prompt. `system_prompt` wins when both are set. A leading `~/` expands to the home directory. |
+
+The built-in prompt lists the ordering principles (schemas first, interfaces before implementations, a dedicated test file directly after the file it tests, generated and vendored files last) and the rules for step titles and the overview. It is `DEFAULT_SYSTEM_PROMPT` in `src/review_guide/mod.rs`; copy it as a starting point. The response shape is enforced separately through structured output, so a custom prompt only needs to describe how to order and summarize. The custom prompt is part of the guide cache key, so changing it refetches guides for already-opened pull requests. An unreadable or empty `system_prompt_file` warns at startup and falls back to the built-in prompt.
 
 ## .tuicrignore
 
