@@ -32,6 +32,7 @@ const COMMAND_SPECS: &[CommandSpec] = &[
     CommandSpec::new(&["edit"], CommandKind::Edit),
     CommandSpec::new(&["clip", "export"], CommandKind::Export),
     CommandSpec::new(&["copy-url"], CommandKind::CopyUrl),
+    CommandSpec::new(&["open-url", "browse"], CommandKind::OpenUrl),
     CommandSpec::new(
         &["clear"],
         CommandKind::Clear(ClearScope::CommentsAndReviewed),
@@ -156,6 +157,7 @@ enum CommandKind {
     Edit,
     Export,
     CopyUrl,
+    OpenUrl,
     Clear(ClearScope),
     Help,
     MessageDetails,
@@ -932,6 +934,10 @@ fn dispatch_command(app: &mut App, kind: CommandKind) -> CommandAfterDispatch {
         }
         CommandKind::CopyUrl => {
             handle_copy_pr_url(app);
+            CommandAfterDispatch::ExitCommandMode
+        }
+        CommandKind::OpenUrl => {
+            app.open_pr_in_browser();
             CommandAfterDispatch::ExitCommandMode
         }
         CommandKind::Clear(scope) => {
@@ -2002,6 +2008,18 @@ mod command_tests {
         assert_eq!(
             command_spec_for("copy-url").map(|spec| spec.kind),
             Some(CommandKind::CopyUrl)
+        );
+    }
+
+    #[test]
+    fn parses_open_url_command_and_alias() {
+        assert_eq!(
+            command_spec_for("open-url").map(|spec| spec.kind),
+            Some(CommandKind::OpenUrl)
+        );
+        assert_eq!(
+            command_spec_for("browse").map(|spec| spec.kind),
+            Some(CommandKind::OpenUrl)
         );
     }
 

@@ -584,6 +584,13 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                format!("  {leader}o        "),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("Open the PR in the browser (same as `:open-url`)"),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  i         ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
@@ -737,6 +744,15 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
                 Style::default().add_modifier(Modifier::BOLD),
             ),
             Span::raw("Copy the open PR URL to clipboard (PR mode)"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  :open-url ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!(
+                "Open the PR in the browser (alias `:browse`, {leader}o; PR mode)"
+            )),
         ]),
         Line::from(vec![
             Span::styled(

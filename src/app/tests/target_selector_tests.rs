@@ -2611,6 +2611,29 @@ fn should_resolve_local_branch_for_branch_command_outside_pr_mode() {
 }
 
 #[test]
+fn should_warn_when_open_url_used_outside_pr_mode() {
+    use crate::handler::handle_command_action;
+    use crate::input::Action;
+    // given
+    let mut app = build_app();
+    app.input_mode = crate::app::InputMode::Command;
+    app.command_buffer = "open-url".to_string();
+    // when
+    handle_command_action(&mut app, Action::SubmitInput);
+    // then
+    let msg = app
+        .message
+        .as_ref()
+        .expect("expected warning on message bar");
+    assert!(matches!(msg.message_type, MessageType::Warning));
+    assert!(
+        msg.content.contains("PR mode"),
+        "got message: {}",
+        msg.content
+    );
+}
+
+#[test]
 fn should_resolve_no_branch_when_local_checkout_is_unnamed() {
     // given
     let mut app = build_app();

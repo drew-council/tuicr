@@ -222,6 +222,23 @@ impl App {
         }
     }
 
+    /// Open the active pull request in the system browser (`:open-url`).
+    pub fn open_pr_in_browser(&mut self) {
+        let DiffSource::PullRequest(pr) = &self.diff_source else {
+            self.set_warning(":open-url only applies in PR mode");
+            return;
+        };
+        if pr.url.is_empty() {
+            self.set_warning("No URL available for this pull request");
+            return;
+        }
+        let url = pr.url.clone();
+        match crate::process::open_in_browser(&url) {
+            Ok(()) => self.set_message(format!("Opened {url}")),
+            Err(e) => self.set_warning(format!("Failed to open browser: {e}")),
+        }
+    }
+
     /// Persist the active inline selection on the session (PR mode only).
     /// `None` is written when the range covers all commits so re-open
     /// doesn't trigger an unnecessary subset re-fetch.

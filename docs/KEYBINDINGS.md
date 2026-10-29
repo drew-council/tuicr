@@ -195,6 +195,7 @@ Shown below the file tree when local comments or visible remote PR threads exist
 | `C` | Add file comment |
 | `<leader>c` | Add review comment |
 | `<leader>p` | Submit review to the forge (PR mode; same as `:submit`) |
+| `<leader>o` | Open the PR in the browser (PR mode; same as `:open-url`) |
 | `v` / `V` | Enter visual mode for range comments |
 | `dd` | Delete comment at cursor |
 | `i` | Edit comment at cursor (vim: text cursor at start) |
@@ -282,6 +283,7 @@ In command mode,
 | `:edit` | Open focused file in `$EDITOR` |
 | `:clip` (`:export`) | Copy review to clipboard |
 | `:copy-url` | Copy the open PR URL to clipboard (PR mode) |
+| `:open-url` (`:browse`) | Open the PR in the browser (PR mode; also `<leader>o`) |
 | `:summary` | Show all pending local-draft comments; `j`/`k` select and `Enter` jumps |
 | `:diff` | Toggle diff view (unified / side-by-side) |
 | `:branch` | Copy the review's branch name to clipboard (PR/MR head branch, else local branch) |

@@ -742,6 +742,10 @@ fn main() -> anyhow::Result<()> {
                                 app.start_submit_action_picker();
                                 continue;
                             }
+                            crossterm::event::KeyCode::Char('o') => {
+                                app.open_pr_in_browser();
+                                continue;
+                            }
                             _ => {}
                         }
                         // Otherwise fall through to normal handling
