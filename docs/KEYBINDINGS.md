@@ -194,6 +194,7 @@ Shown below the file tree when local comments or visible remote PR threads exist
 | `c` | Add line comment (or file comment if not on a diff line) |
 | `C` | Add file comment |
 | `<leader>c` | Add review comment |
+| `<leader>p` | Submit review to the forge (PR mode; same as `:submit`) |
 | `v` / `V` | Enter visual mode for range comments |
 | `dd` | Delete comment at cursor |
 | `i` | Edit comment at cursor (vim: text cursor at start) |
@@ -292,7 +293,7 @@ In command mode,
 | `:commits` (`:targets`) | Select commits to review |
 | `:prs` | Open the review target selector on Pull Requests |
 | `:sessions` (`:reviews`) | Resume a saved review for this checkout |
-| `:submit` | Open submit picker (Comment / Approve / Request changes / Draft) |
+| `:submit` | Open submit picker (Comment / Approve / Request changes / Draft; also `<leader>p`) |
 | `:submit comment` | Submit a Comment review |
 | `:submit approve` | Submit an Approve review |
 | `:submit request-changes` | Submit a Request-changes review |

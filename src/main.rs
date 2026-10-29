@@ -738,6 +738,10 @@ fn main() -> anyhow::Result<()> {
                                 app.relative_line_numbers = !app.relative_line_numbers;
                                 continue;
                             }
+                            crossterm::event::KeyCode::Char('p') => {
+                                app.start_submit_action_picker();
+                                continue;
+                            }
                             _ => {}
                         }
                         // Otherwise fall through to normal handling

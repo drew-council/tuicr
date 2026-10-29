@@ -577,6 +577,13 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                format!("  {leader}p        "),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("Submit review to the forge (same as `:submit`)"),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  i         ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
@@ -848,9 +855,9 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
                 "  :submit       ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
-            Span::raw(
-                "Pick a review event from a menu (Comment / Approve / Request changes / Draft)",
-            ),
+            Span::raw(format!(
+                "Pick a review event from a menu (Comment / Approve / Request changes / Draft; also {leader}p)"
+            )),
         ]),
         Line::from(vec![
             Span::styled(

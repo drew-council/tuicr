@@ -94,7 +94,7 @@ tuicr update 0.18.0         # Install a known-good version
 Every flag, environment variable, and exit code in [docs/CLI.md](docs/CLI.md).
 
 Inside tuicr, navigate with `j`/`k`, press `c` to comment, then `y` to copy the review or
-`:submit` to push it to GitHub, GitLab, Gitea, Bitbucket, Azure DevOps, or Gerrit. When reopening a
+`:submit` (or `<leader>p`) to push it to GitHub, GitLab, Gitea, Bitbucket, Azure DevOps, or Gerrit. When reopening a
 pull request you've reviewed before, tuicr preselects commits newer than your latest submitted
 review when that metadata is available; commits already covered by that review are marked with
 `✓` in the inline selector.
