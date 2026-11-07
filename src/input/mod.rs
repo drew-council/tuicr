@@ -1,11 +1,13 @@
 pub mod action;
 pub mod handler;
 pub mod keybindings;
+pub mod keymap;
+pub mod keyspec;
 pub mod mode;
 
 pub use action::{ACTIONS, Action, ActionSpec, CountMode, Invocation};
 pub use keybindings::{
-    map_file_picker_filter_mode, map_file_tree_mode, map_file_tree_mode_with_q_quits,
-    map_file_tree_prompt_mode, map_global_key, map_key_to_action, map_key_to_action_with_q_quits,
-    map_target_filter_mode, map_theme_picker_filter_mode,
+    map_command_key, map_comment_key, map_file_picker_filter_key, map_prompt_key,
 };
+pub use keymap::{Binding, KeyContext, Keymap, Resolution};
+pub use keyspec::KeyChord;

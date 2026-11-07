@@ -723,12 +723,11 @@ fn should_paste_into_the_open_file_tree_prompt() {
     assert_eq!(app.file_tree_draft().unwrap().buffer, "main");
 }
 
-/// Drive input the way `main.rs` does: key -> `map_normal_path_key` ->
-/// `dispatch_action`, and mouse events through `handle_mouse_event`.
+/// Drive input the way `main.rs` does: keys through `handle_key`, and mouse
+/// events through `handle_mouse_event`.
 fn press(app: &mut App, code: crossterm::event::KeyCode) {
     let key = crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE);
-    let action = crate::handler::map_normal_path_key(app, key);
-    crate::handler::dispatch_action(app, action);
+    crate::handler::handle_key(app, key);
 }
 
 fn mouse(app: &mut App, kind: crossterm::event::MouseEventKind, column: u16, row: u16) {

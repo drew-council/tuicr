@@ -3,7 +3,6 @@ use std::io::{self, IsTerminal, Write};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyModifiers};
 use crossterm::{
     event::{self, Event, KeyEventKind},
     execute, queue,
@@ -14,8 +13,9 @@ use tuicr::app::{self, App, AppStartupOptions, FocusedPanel, InputMode};
 use tuicr::cli::parse_cli_args;
 use tuicr::config::IgnoreWhitespaceConfig;
 use tuicr::editor::{EditorCommand, EditorError, EditorLaunch, EditorSurface, EditorTarget};
-use tuicr::handler::{dispatch_action, handle_mouse_event, handle_paste};
-use tuicr::input::{Action, Invocation};
+use tuicr::handler::{handle_mouse_event, handle_paste};
+use tuicr::input::keymap::Q_QUITS_CONTEXTS;
+use tuicr::input::{Action, Binding, Keymap};
 use tuicr::terminal_state::{TerminalFeatures, TerminalSession};
 use tuicr::theme::{is_syntax_theme_fallback_warning, resolve_theme_with_config};
 use tuicr::vcs::{DiffWhitespaceMode, GitBackendPreference, WhitespaceAutoPolicy};
@@ -292,8 +292,16 @@ fn main() -> anyhow::Result<()> {
                 if let Some(leader) = cfg.leader {
                     app.leader_key = leader;
                 }
+                let mut bindings = Vec::new();
+                if cfg.q_quits == Some(true) {
+                    for context in Q_QUITS_CONTEXTS {
+                        bindings.push(Binding::new(*context, "q", Action::ConfirmQuit));
+                    }
+                }
+                let (keymap, keymap_warnings) = Keymap::build(app.leader_key, &bindings);
+                app.keymap = keymap;
+                startup_warnings.extend(keymap_warnings);
                 app.comment_vim_enabled = cfg.comment_vim.unwrap_or(false);
-                app.q_quits = cfg.q_quits.unwrap_or(false);
                 app.editor_override = cfg.editor.clone();
                 if let Some(w) = cfg.comment_tab_width {
                     app.comment_tab_width = w;
@@ -458,14 +466,6 @@ fn main() -> anyhow::Result<()> {
         app.set_warning(message);
     }
 
-    // Track pending z command for zz centering
-    let mut pending_z = false;
-    // Track pending Z command for ZZ export+quit / ZQ quit
-    let mut pending_shift_z = false;
-    // Track pending d command for dd delete
-    let mut pending_d = false;
-    // Track pending leader command for leader-prefixed actions.
-    let mut pending_leader = false;
     // Track pending Ctrl+C for "press twice to exit" (with timestamp for 2s timeout)
     let mut pending_ctrl_c: Option<Instant> = None;
     // Only re-render when state actually changed; the diff renderer rebuilds
@@ -567,18 +567,7 @@ fn main() -> anyhow::Result<()> {
             if let Event::Key(key) = &event
                 && key.kind == KeyEventKind::Release
             {
-                if matches!(
-                    key.code,
-                    crossterm::event::KeyCode::Down | crossterm::event::KeyCode::Char('j')
-                ) {
-                    app.down_released_since_arm = true;
-                }
-                if matches!(
-                    key.code,
-                    crossterm::event::KeyCode::Up | crossterm::event::KeyCode::Char('k')
-                ) {
-                    app.up_released_since_arm = true;
-                }
+                handler::handle_key_release(&mut app, *key);
             }
             match event {
                 Event::Key(key)
@@ -591,6 +580,7 @@ fn main() -> anyhow::Result<()> {
                             .modifiers
                             .contains(crossterm::event::KeyModifiers::CONTROL)
                     {
+                        app.pending_keys.clear();
                         // If in comment mode, cancel the comment first
                         if app.input_mode == InputMode::Comment {
                             app.exit_comment_mode();
@@ -615,118 +605,19 @@ fn main() -> anyhow::Result<()> {
                         app.message = None;
                     }
 
-                    // Keys that work the same in every mode (`Ctrl-l` redraw).
-                    // Checked before the pending-prefix and vim-editor routing
-                    // so they never reach a text buffer.
-                    if handler::handle_global_key(&mut app, key) {
-                        continue;
-                    }
-
-                    // Second key of a `z`, `Z`, `d` or `<leader>` sequence. A key
-                    // that completes none falls through to normal handling.
-                    let prefixed = if std::mem::take(&mut pending_z) {
-                        match key.code {
-                            KeyCode::Char('z') => Some(Action::CenterCursor),
-                            KeyCode::Char('t') => Some(Action::CursorToTop),
-                            KeyCode::Char('b') => Some(Action::CursorToBottom),
-                            _ => None,
-                        }
-                    } else if std::mem::take(&mut pending_shift_z) {
-                        match key.code {
-                            KeyCode::Char('Z') => Some(Action::ExportQuit),
-                            KeyCode::Char('Q') => Some(Action::ForceQuit),
-                            _ => None,
-                        }
-                    } else if std::mem::take(&mut pending_d) {
-                        match (key.code, key.modifiers) {
-                            (KeyCode::Char('d'), KeyModifiers::NONE)
-                                if app.input_mode == InputMode::CommitSelect =>
-                            {
-                                Some(Action::SessionsTabDelete)
-                            }
-                            (KeyCode::Char('d'), KeyModifiers::NONE) => Some(Action::DeleteComment),
-                            _ => None,
-                        }
-                    } else if std::mem::take(&mut pending_leader) {
-                        match key.code {
-                            KeyCode::Char('e') => Some(Action::ToggleFileList),
-                            KeyCode::Char('h') => Some(Action::FocusPaneLeft),
-                            KeyCode::Char('l') => Some(Action::FocusPaneRight),
-                            KeyCode::Char('k') => Some(Action::FocusPaneUp),
-                            KeyCode::Char('j') => Some(Action::FocusPaneDown),
-                            KeyCode::Char('c') => Some(Action::AddReviewComment),
-                            KeyCode::Char('s') => Some(Action::ToggleCommits),
-                            KeyCode::Char('f') => Some(Action::ToggleSingleFileView),
-                            KeyCode::Char('n') => Some(Action::ToggleRelativeNumber),
-                            KeyCode::Char('p') => Some(Action::FilePicker),
-                            _ => None,
-                        }
-                    } else {
-                        None
-                    };
-                    if let Some(action) = prefixed {
-                        dispatch_action(&mut app, action);
-                        if app.input_mode == InputMode::Summary {
-                            break;
-                        }
-                        continue;
-                    }
-
                     // Vim modal editing: route comment-box keys to the edtui
                     // overlay (app-level keys handled inside).
                     if app.input_mode == InputMode::Comment && app.comment_vim_enabled {
+                        if handler::handle_global_key(&mut app, key) {
+                            continue;
+                        }
                         app.ensure_comment_vim_editor();
                         if handle_comment_vim_key(&mut app, key) {
                             continue;
                         }
                     }
 
-                    // Editing the PR-tab filter is a sub-state of CommitSelect;
-                    // route through the filter-specific key map so typed
-                    // characters update the filter buffer rather than driving
-                    // commit-list navigation.
-                    let action = handler::map_normal_path_key(&app, key);
-
-                    // Handle pending command setters (these work in any mode)
-                    match action {
-                        Action::PendingZCommand => {
-                            pending_z = true;
-                            app.pending_count = None;
-                            continue;
-                        }
-                        Action::PendingShiftZCommand => {
-                            pending_shift_z = true;
-                            app.pending_count = None;
-                            continue;
-                        }
-                        Action::PendingDCommand => {
-                            pending_d = true;
-                            app.pending_count = None;
-                            continue;
-                        }
-                        Action::PendingLeaderCommand => {
-                            pending_leader = true;
-                            app.pending_count = None;
-                            continue;
-                        }
-                        _ => {}
-                    }
-
-                    // Vim-style {count}{motion} (Normal mode only): digits accumulate
-                    // into `pending_count`, and the next action consumes it.
-                    let mut count = None;
-                    if app.input_mode == InputMode::Normal {
-                        if let Action::Digit(d) = action {
-                            let n = app.pending_count.unwrap_or(0);
-                            app.pending_count = Some(
-                                (n.saturating_mul(10).saturating_add(d as usize)).min(999_999),
-                            );
-                            continue;
-                        }
-                        count = app.pending_count.take();
-                    }
-
-                    dispatch_action(&mut app, Invocation::new(action, count));
+                    handler::handle_key(&mut app, key);
                     // The summary view assigns comment identities when it
                     // renders, and the next key (a queued `dd`) reads them.
                     if app.input_mode == InputMode::Summary {

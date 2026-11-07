@@ -107,6 +107,14 @@ impl App {
         }
     }
 
+    pub fn file_picker_filter_delete_word(&mut self) {
+        if let Some(draft) = self.file_picker.draft.as_mut() {
+            let cursor = draft.len();
+            crate::text_edit::delete_word_before(draft, cursor);
+            self.file_picker.select(0);
+        }
+    }
+
     pub fn file_picker_filter_clear_line(&mut self) {
         if let Some(draft) = self.file_picker.draft.as_mut() {
             draft.clear();

@@ -253,6 +253,13 @@ impl App {
         }
     }
 
+    pub fn theme_picker_filter_delete_word(&mut self) {
+        if let Some(draft) = self.theme_picker.draft.as_mut() {
+            let cursor = draft.len();
+            crate::text_edit::delete_word_before(draft, cursor);
+        }
+    }
+
     pub fn theme_picker_filter_clear_line(&mut self) {
         if let Some(draft) = self.theme_picker.draft.as_mut() {
             draft.clear();

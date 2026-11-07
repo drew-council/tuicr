@@ -1,4 +1,4 @@
-use crossterm::event::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Position;
 
 use crate::app::{
@@ -9,9 +9,8 @@ use crate::error::TuicrError;
 use crate::forge::remote_comments::PrCommentsVisibility;
 use crate::forge::submit::SubmitEvent;
 use crate::input::{
-    ACTIONS, Action, ActionSpec, Invocation, map_file_picker_filter_mode,
-    map_file_tree_mode_with_q_quits, map_file_tree_prompt_mode, map_global_key,
-    map_key_to_action_with_q_quits, map_target_filter_mode, map_theme_picker_filter_mode,
+    ACTIONS, Action, ActionSpec, Invocation, KeyChord, KeyContext, Resolution, map_command_key,
+    map_comment_key, map_file_picker_filter_key, map_prompt_key,
 };
 use crate::model::{ClearScope, LineSide};
 use crate::output::{
@@ -226,35 +225,107 @@ fn open_target_selector(app: &mut App, tab: TargetTab) {
     }
 }
 
-/// Handle a key that means the same thing in every input mode (see
-/// `map_global_key`). Returns `true` when the key was consumed, so the caller
-/// skips the per-mode maps.
-pub fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
-    match map_global_key(key) {
-        Action::None => false,
-        action => {
-            dispatch_action(app, action);
-            true
+/// Handle one key press: resolve it through the keymap (or the text editor
+/// when a prompt is open), apply any `{N}` count, and dispatch the result.
+pub fn handle_key(app: &mut App, key: KeyEvent) {
+    if let Some(bare) = split_escape_prefix(app, key) {
+        handle_key(app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        handle_key(app, bare);
+        return;
+    }
+    let chord = KeyChord::from(key);
+    let action = match app.key_context() {
+        None if handle_global_key(app, key) => return,
+        None => map_text_key(app, key),
+        Some(context) => {
+            if context.takes_count()
+                && app.pending_keys.is_empty()
+                && let KeyCode::Char(c @ '0'..='9') = key.code
+                && key.modifiers == KeyModifiers::NONE
+                && !app.keymap.binds(context, &[chord])
+            {
+                let n = app.pending_count.unwrap_or(0);
+                let digit = c as usize - '0' as usize;
+                app.pending_count = Some(n.saturating_mul(10).saturating_add(digit).min(999_999));
+                return;
+            }
+            match app.keymap.resolve(context, &mut app.pending_keys, chord) {
+                Resolution::Run(action) => action,
+                Resolution::Pending => {
+                    app.pending_count = None;
+                    return;
+                }
+                Resolution::Unbound => Action::None,
+            }
         }
+    };
+    // Only review panes take counts; elsewhere a typed count waits.
+    let count = if app.input_mode == InputMode::Normal {
+        app.pending_count.take()
+    } else {
+        None
+    };
+    dispatch_action(app, Invocation::new(action, count));
+}
+
+/// Releasing a key bound to a cursor move re-arms the two-press file walk
+/// of single-file view (see `App::down_released_since_arm`).
+pub fn handle_key_release(app: &mut App, key: KeyEvent) {
+    let Some(context) = app.key_context() else {
+        return;
+    };
+    match app.keymap.action(context, &[KeyChord::from(key)]) {
+        Some(Action::CursorDown(_)) => app.down_released_since_arm = true,
+        Some(Action::CursorUp(_)) => app.up_released_since_arm = true,
+        _ => {}
     }
 }
 
-/// Map a key press to an `Action` for the current mode. An open text prompt
-/// (PR filter, file-tree prompt, theme/file picker filter) owns the keys first,
-/// whatever panel has focus; the file tree has its own map otherwise.
-pub fn map_normal_path_key(app: &App, key: KeyEvent) -> Action {
-    if app.input_mode == InputMode::CommitSelect && app.pr_filter_editing() {
-        map_target_filter_mode(key)
-    } else if app.input_mode == InputMode::Normal && app.file_tree_prompt_editing() {
-        map_file_tree_prompt_mode(key)
-    } else if app.input_mode == InputMode::ThemePicker && app.theme_picker_filtering() {
-        map_theme_picker_filter_mode(key)
-    } else if app.input_mode == InputMode::FilePicker && app.file_picker_filtering() {
-        map_file_picker_filter_mode(key)
-    } else if app.input_mode == InputMode::Normal && app.focused_panel == FocusedPanel::FileList {
-        map_file_tree_mode_with_q_quits(key, app.leader_key, app.q_quits)
-    } else {
-        map_key_to_action_with_q_quits(key, app.input_mode, app.leader_key, app.q_quits)
+/// The fixed editor map for the text input that owns the keyboard.
+fn map_text_key(app: &App, key: KeyEvent) -> Action {
+    match app.input_mode {
+        InputMode::Command => map_command_key(key),
+        InputMode::Comment => map_comment_key(key),
+        InputMode::FilePicker => map_file_picker_filter_key(key),
+        _ => map_prompt_key(key),
+    }
+}
+
+/// Terminals report Esc followed quickly by a key as that key with Alt
+/// (tmux does so within its `escape-time`), so `Esc :` arrives as `Alt-:`.
+/// When nothing binds the Alt chord, split it back into Esc and the bare key,
+/// as Vim does. Ctrl+Alt is left alone: Windows reports AltGr that way.
+fn split_escape_prefix(app: &mut App, key: KeyEvent) -> Option<KeyEvent> {
+    if !key.modifiers.contains(KeyModifiers::ALT) || key.modifiers.contains(KeyModifiers::CONTROL) {
+        return None;
+    }
+    let chord = KeyChord::from(key);
+    let bound = match app.key_context() {
+        Some(context) => {
+            // The chord may also be the next key of a pending sequence.
+            app.pending_keys.push(chord);
+            let extends = app.keymap.binds(context, &app.pending_keys);
+            app.pending_keys.pop();
+            extends || app.keymap.binds(context, &[chord])
+        }
+        None => {
+            app.keymap.binds(KeyContext::Global, &[chord]) || map_text_key(app, key) != Action::None
+        }
+    };
+    (!bound).then(|| KeyEvent::new(key.code, key.modifiers - KeyModifiers::ALT))
+}
+
+/// Run a `global` binding (`Ctrl-l`) while a text input owns the keyboard.
+/// Everywhere else the context's own map already includes the global layer.
+/// Returns `true` when the key was consumed.
+pub fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
+    let chord = KeyChord::from(key);
+    match app.keymap.action(KeyContext::Global, &[chord]).cloned() {
+        Some(action) => {
+            dispatch_action(app, action);
+            true
+        }
+        None => false,
     }
 }
 
@@ -1582,6 +1653,7 @@ pub fn handle_file_picker_action(app: &mut App, action: Action) {
                 .filter(|c| !matches!(c, '\n' | '\r'))
                 .for_each(|c| app.file_picker_filter_insert_char(c)),
             Action::DeleteChar => app.file_picker_filter_delete_char(),
+            Action::DeleteWord => app.file_picker_filter_delete_word(),
             Action::ClearLine => app.file_picker_filter_clear_line(),
             Action::CursorDown(n) => app.move_file_picker_selection(n as isize),
             Action::CursorUp(n) => app.move_file_picker_selection(-(n as isize)),
@@ -1630,6 +1702,7 @@ fn handle_theme_picker_filter_action(app: &mut App, action: Action) {
             .filter(|c| !matches!(c, '\n' | '\r'))
             .for_each(|c| app.theme_picker_filter_insert_char(c)),
         Action::DeleteChar => app.theme_picker_filter_delete_char(),
+        Action::DeleteWord => app.theme_picker_filter_delete_word(),
         Action::ClearLine => app.theme_picker_filter_clear_line(),
         Action::SubmitInput => app.commit_theme_picker_filter(),
         Action::ExitMode => app.cancel_theme_picker_filter(),

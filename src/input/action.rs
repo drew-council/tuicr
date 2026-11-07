@@ -280,13 +280,8 @@ actions! {
         ConfirmNo => "no", Ignore, "Decline";
     }
     internal {
-        Digit(u8),
-        PendingZCommand,
-        PendingShiftZCommand,
-        PendingLeaderCommand,
         MouseScrollUp(usize),
         MouseScrollDown(usize),
-        PendingDCommand,
         /// Transitional hint for the removed `q`-quits binding: shows a message
         /// pointing at `:q` instead of quitting. Drop this a few releases after
         /// the `q` removal has had time to land.
