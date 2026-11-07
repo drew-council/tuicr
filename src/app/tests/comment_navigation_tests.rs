@@ -1,6 +1,4 @@
 use crate::app::*;
-use crate::handler::handle_comment_action;
-use crate::input::keybindings::map_key_to_action;
 use crate::model::{DiffHunk, DiffLine, FileStatus, LineOrigin};
 use crate::vcs::traits::VcsType;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -116,8 +114,7 @@ impl Editor {
         } else {
             KeyModifiers::NONE
         };
-        let action = map_key_to_action(KeyEvent::new(code, modifiers), self.app.input_mode, ';');
-        handle_comment_action(&mut self.app, action);
+        crate::handler::handle_key(&mut self.app, KeyEvent::new(code, modifiers));
         self.draw()
     }
 

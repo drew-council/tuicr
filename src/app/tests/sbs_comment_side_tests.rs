@@ -407,12 +407,10 @@ fn visual_suggestion_prefills_selected_side_in_both_views() {
                     }
                 });
                 app.input_mode = InputMode::VisualSelect;
-                let action = crate::input::map_key_to_action(
+                crate::handler::handle_key(
+                    &mut app,
                     KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE),
-                    InputMode::VisualSelect,
-                    crate::config::DEFAULT_LEADER_KEY,
                 );
-                crate::handler::handle_visual_action(&mut app, action);
 
                 if side == LineSide::Old {
                     assert_eq!(app.input_mode, InputMode::VisualSelect);

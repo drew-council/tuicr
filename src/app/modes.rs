@@ -1,4 +1,5 @@
 use super::*;
+use crate::input::KeyContext;
 
 impl App {
     pub fn set_message(&mut self, msg: impl Into<String>) {
@@ -165,6 +166,36 @@ impl App {
             .total_lines
             .saturating_sub(self.help_state.viewport_height);
         self.help_state.scroll_offset = max_offset;
+    }
+
+    /// The keymap context for the current state, or `None` while a text
+    /// input (the `:` line, a search, a filter, the comment box) owns the
+    /// keyboard.
+    pub fn key_context(&self) -> Option<KeyContext> {
+        Some(match self.input_mode {
+            InputMode::Command | InputMode::Search | InputMode::Comment => return None,
+            InputMode::Normal if self.file_tree_prompt_editing() => return None,
+            InputMode::CommitSelect if self.pr_filter_editing() => return None,
+            InputMode::ThemePicker if self.theme_picker_filtering() => return None,
+            InputMode::FilePicker if self.file_picker_filtering() => return None,
+            InputMode::Normal => match self.focused_panel {
+                FocusedPanel::Diff => KeyContext::Diff,
+                FocusedPanel::FileList => KeyContext::FileTree,
+                FocusedPanel::Comments => KeyContext::Comments,
+                FocusedPanel::CommitSelector => KeyContext::Commits,
+            },
+            InputMode::VisualSelect => KeyContext::Visual,
+            InputMode::Summary => KeyContext::Summary,
+            InputMode::Help => KeyContext::Help,
+            InputMode::MessageDetails => KeyContext::Messages,
+            InputMode::Confirm => KeyContext::Confirm,
+            InputMode::SubmitResolver => KeyContext::SubmitResolver,
+            InputMode::SubmitConfirm => KeyContext::SubmitConfirm,
+            InputMode::SubmitActionPicker => KeyContext::SubmitPicker,
+            InputMode::CommitSelect => KeyContext::Targets,
+            InputMode::ThemePicker => KeyContext::ThemePicker,
+            InputMode::FilePicker => KeyContext::FilePicker,
+        })
     }
 
     pub fn enter_summary_mode(&mut self) {
