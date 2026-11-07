@@ -133,7 +133,8 @@ and Draft. Inline comments land on their lines; review-level comments become the
 | `:w`, `:wq`, `:q` | Save, save and quit, quit |
 | `?` | Full help |
 
-Every key and `:` command: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
+Every key and `:` command: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md). Rebind any of them in
+`config.toml`.
 
 ## Configuration
 
@@ -145,13 +146,16 @@ diff_view = "side-by-side"   # or "unified"
 editor = "nvim"              # for `e` / `:edit`; overrides $EDITOR
 leader = ";"                 # prefix for leader shortcuts
 
+[keys.normal]                # rebind any key
+"<C-s>" = "submit"
+
 [[comment_types]]            # optional; reviews are untyped by default
 id = "issue"
 color = "red"
 definition = "must fix before merge"
 ```
 
-All options, the theme list, local themes, Home Manager settings and `.tuicrignore`:
+All options, keybindings, the theme list, local themes, Home Manager settings and `.tuicrignore`:
 [docs/CONFIG.md](docs/CONFIG.md).
 
 ## How it compares

@@ -196,7 +196,8 @@ pub enum Action {
     OpenSessions,
     TargetSelectorTabNext,
     TargetSelectorTabPrev,
-    /// Toggle PR tab between all open PRs and PRs awaiting your review.
+    /// Cycle the PR tab scope: all open PRs, review requested, requested by
+    /// name (GitHub).
     TogglePrReviewRequestedFilter,
     /// Sessions tab: show or hide sessions holding no review progress.
     SessionsTabToggleShowEmpty,
@@ -447,7 +448,7 @@ pub const ACTIONS: &[ActionSpec] = &[
     spec(A::OpenSessions, "open-sessions", Ignore, "Open the review target selector on Sessions").cmd(&["sessions", "reviews"]),
     spec(A::TargetSelectorTabNext, "next-tab", Ignore, "Next tab"),
     spec(A::TargetSelectorTabPrev, "prev-tab", Ignore, "Previous tab"),
-    spec(A::TogglePrReviewRequestedFilter, "toggle-review-requested", Ignore, "Toggle PRs awaiting your review"),
+    spec(A::TogglePrReviewRequestedFilter, "toggle-review-requested", Ignore, "Cycle the PR scope: all, review requested, requested by name"),
     spec(A::SessionsTabToggleShowEmpty, "toggle-empty-sessions", Ignore, "Show or hide empty sessions"),
     spec(A::SessionsTabDelete, "delete-session", Ignore, "Delete the session under the cursor"),
     // Pull request review
@@ -576,6 +577,24 @@ mod tests {
             Some(Action::ToggleShowReviewed)
         );
         assert_eq!(Action::from_command("nope"), None);
+    }
+
+    #[test]
+    fn should_document_every_action_in_the_config_reference() {
+        let docs = include_str!("../../docs/CONFIG.md");
+        let rows: Vec<Vec<&str>> = docs
+            .lines()
+            .map(|line| line.split('|').map(str::trim).collect())
+            .collect();
+        for spec in ACTIONS {
+            let name = format!("`{}`", spec.name);
+            let commands: Vec<String> = spec.commands.iter().map(|c| format!("`:{c}`")).collect();
+            let row = ["", &name, spec.help, &commands.join(", "), ""];
+            assert!(
+                rows.iter().any(|cells| cells.as_slice() == row),
+                "docs/CONFIG.md is missing the row {row:?}"
+            );
+        }
     }
 
     #[test]

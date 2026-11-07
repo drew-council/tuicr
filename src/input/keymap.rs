@@ -469,15 +469,22 @@ impl Keymap {
                 if !row.user {
                     continue;
                 }
-                for (_, old) in displaced {
-                    warnings.insert(format!(
-                        "Warning: keys.{} '{}' replaces '{}' ({}); bind '{}' = \"none\" to silence this",
-                        row.binding.context.name(),
-                        row.binding.keys,
-                        old.keys,
-                        old.action.name().unwrap_or("none"),
-                        old.keys,
-                    ));
+                for (old_chords, old) in displaced {
+                    let unbound_by_user = active.iter().any(|other| {
+                        other.user
+                            && other.binding.action == Action::None
+                            && other.chords == old_chords
+                    });
+                    if !unbound_by_user {
+                        warnings.insert(format!(
+                            "Warning: keys.{} '{}' replaces '{}' ({}); bind '{}' = \"none\" to silence this",
+                            row.binding.context.name(),
+                            row.binding.keys,
+                            old.keys,
+                            old.action.name().unwrap_or("none"),
+                            old.keys,
+                        ));
+                    }
                 }
             }
             let map = map
@@ -901,14 +908,20 @@ mod tests {
             "{warnings:?}"
         );
 
-        let (_, warnings) = Keymap::build(
-            DEFAULT_LEADER_KEY,
-            &[
+        for bindings in [
+            [
                 Binding::new(K::Normal, "dd", A::None),
                 Binding::new(K::Normal, "d", A::HalfPageDown),
             ],
-        );
-        assert!(warnings.is_empty(), "{warnings:?}");
+            [
+                Binding::new(K::Normal, "d", A::HalfPageDown),
+                Binding::new(K::Normal, "dd", A::None),
+            ],
+        ] {
+            let (keymap, warnings) = Keymap::build(DEFAULT_LEADER_KEY, &bindings);
+            assert!(warnings.is_empty(), "{warnings:?}");
+            assert_eq!(run(&keymap, K::Diff, "d"), Resolution::Run(A::HalfPageDown));
+        }
     }
 
     #[test]
