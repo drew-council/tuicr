@@ -103,10 +103,11 @@ pub fn render_file_picker(frame: &mut Frame, app: &mut App) {
         frame.render_stateful_widget(list, list_area, &mut app.file_picker.list_state);
     }
 
+    let hints = crate::ui::status_bar::key_hints(app, crate::input::KeyContext::FilePicker);
     let footer = if filtering {
         "type to filter \u{00b7} \u{2191}/\u{2193} move \u{00b7} \u{21b5} open \u{00b7} esc cancel filter"
     } else {
-        "j/k move \u{00b7} \u{21b5} open \u{00b7} / filter \u{00b7} esc cancel"
+        hints.trim_start()
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(

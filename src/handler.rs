@@ -183,7 +183,11 @@ fn confirm_quit(app: &mut App) {
     if app.input_mode != InputMode::Normal {
         app.should_quit = true;
     } else if app.dirty && app.session.has_comments() && !app.quit_warned {
-        app.set_sticky_warning("Unsaved changes. Press q again to quit.");
+        let context = app.key_context().unwrap_or(KeyContext::Normal);
+        let key = app
+            .keymap
+            .label(context, &[Action::ConfirmQuit], app.leader_key);
+        app.set_sticky_warning(format!("Unsaved changes. Press {key} again to quit."));
         app.quit_warned = true;
     } else if app.dirty && !app.session.has_comments() {
         app.discard_session_and_quit();
