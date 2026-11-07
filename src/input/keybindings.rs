@@ -1,179 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::InputMode;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Action {
-    // Navigation
-    CursorDown(usize),
-    CursorUp(usize),
-    HalfPageDown,
-    HalfPageUp,
-    PageDown,
-    PageUp,
-    GoToTop,
-    GoToBottom,
-    Digit(u8),
-    NextFile,
-    PrevFile,
-    NextHunk,
-    PrevHunk,
-    NextComment,
-    PrevComment,
-    PendingZCommand,
-    PendingShiftZCommand,
-    PendingLeaderCommand,
-    ScrollLeft(usize),
-    ScrollRight(usize),
-    ScrollViewDown(usize),
-    ScrollViewUp(usize),
-    MouseScrollUp(usize),
-    MouseScrollDown(usize),
-
-    // Panel focus
-    ToggleFocus,
-    ToggleFocusReverse,
-    SelectFile,
-
-    // Review actions
-    ToggleReviewed,
-    ToggleHunkReviewed,
-    AddLineComment,
-    AddFileComment,
-    EditComment,
-    /// Edit the comment at cursor with the text cursor at end (vim `A`).
-    EditCommentAtEnd,
-    PendingDCommand,
-    EditFile,
-    SearchNext,
-    SearchPrev,
-    ClearSearchHighlight,
-
-    // Visual selection mode
-    EnterVisualMode,
-    AddRangeComment,
-    AddRangeSuggestion,
-
-    // Session
-    Quit,
-    /// Transitional hint for the removed `q`-quits binding: shows a message
-    /// pointing at `:q` instead of quitting. Drop this a few releases after
-    /// the `q` removal has had time to land.
-    QuitHint,
-    ExportToClipboard,
-    /// Copy just the comment under the cursor (`Y`), not the whole review.
-    CopyCommentAtCursor,
-
-    // Mode changes
-    EnterCommandMode,
-    EnterSearchMode,
-    ExitMode,
-    ToggleHelp,
-
-    // Screen
-    /// Clear the terminal and repaint every cell on the next frame (`Ctrl-l`).
-    Redraw,
-
-    // Text input
-    InsertChar(char),
-    /// Bracketed-paste payload from the terminal. Carries the full pasted
-    /// string so multi-line / shifted input doesn't get re-interpreted as
-    /// keystrokes (Enter submitting, ':' opening command mode, etc.).
-    Paste(String),
-    DeleteChar,
-    DeleteWord,
-    ClearLine,
-    SubmitInput,
-    CompleteCommand,
-    CompleteCommandReverse,
-    TextCursorLeft,
-    TextCursorRight,
-    TextCursorUp,
-    TextCursorDown,
-    TextCursorLineStart,
-    TextCursorLineEnd,
-    TextCursorWordLeft,
-    TextCursorWordRight,
-
-    // Comment type
-    CycleCommentType,
-    CycleCommentTypeReverse,
-
-    // Confirm dialog
-    ConfirmYes,
-    ConfirmNo,
-
-    // Commit selection
-    CommitSelectUp,
-    CommitSelectDown,
-    ToggleCommitSelect,
-    ConfirmCommitSelect,
-    /// Cycle inline commit selector to next individual commit (`)`)
-    CycleCommitNext,
-    /// Cycle inline commit selector to previous individual commit (`(`)
-    CycleCommitPrev,
-
-    // Review target selector
-    /// Switch to the next selector tab (Tab key).
-    TargetSelectorTabNext,
-    /// Switch to the previous selector tab (Shift-Tab).
-    TargetSelectorTabPrev,
-    /// Begin editing the local filter inside the PR tab (`/`).
-    BeginTargetFilter,
-    /// Toggle PR tab between all open PRs and PRs awaiting your review (`r`).
-    TogglePrReviewRequestedFilter,
-    /// Sessions tab: show or hide sessions holding no review progress.
-    SessionsTabToggleShowEmpty,
-    /// Sessions tab: delete the session under the cursor, after a confirm.
-    SessionsTabDelete,
-
-    // Submit resolver
-    /// Move resolver cursor down (`j` / Down).
-    SubmitResolverDown,
-    /// Move resolver cursor up (`k` / Up).
-    SubmitResolverUp,
-    /// Toggle the action for the row under the resolver cursor (Enter).
-    SubmitResolverToggle,
-    /// Advance from resolver to final confirmation (`s`).
-    SubmitResolverAdvance,
-    /// Reload the PR in submit confirm (`r`, only when stale-head warning is
-    /// active). Currently triggers the same path as `:e`.
-    SubmitReloadPr,
-
-    // Submit action picker (bare `:submit`)
-    /// Move action-picker cursor down (`j` / Down).
-    SubmitPickerDown,
-    /// Move action-picker cursor up (`k` / Up).
-    SubmitPickerUp,
-    /// Confirm the picker selection (Enter).
-    SubmitPickerConfirm,
-
-    ToggleExpand,
-    ExpandAll,
-    CollapseAll,
-    SelectFileFull,
-
-    // File tree filters (only produced while the file tree is focused, see
-    // `map_file_tree_mode`)
-    /// `i` — open the include-regex prompt.
-    FileTreeFilterInclude,
-    /// `e` — open the exclude-regex prompt.
-    FileTreeFilterExclude,
-    /// `I` — drop the include filter.
-    FileTreeClearInclude,
-    /// `E` — drop the exclude filter.
-    FileTreeClearExclude,
-    /// `/` — open the file-tree search prompt.
-    FileTreeSearch,
-
-    /// `/` inside the theme picker — open its filter prompt.
-    ThemePickerFilter,
-    /// `/` inside the file picker — open its filter prompt.
-    FilePickerFilter,
-
-    // No-op
-    None,
-}
+use crate::input::Action;
 
 /// Keys that mean the same thing in every input mode.
 ///
@@ -268,8 +96,8 @@ fn map_normal_mode_with_q_quits(key: KeyEvent, leader_key: char, q_quits: bool) 
         // Panel focus
         (KeyCode::Tab, KeyModifiers::NONE) => Action::ToggleFocus,
         (KeyCode::BackTab, _) => Action::ToggleFocusReverse,
-        (KeyCode::Enter, KeyModifiers::NONE) => Action::SelectFile,
-        (KeyCode::Enter, KeyModifiers::SHIFT) => Action::SelectFileFull,
+        (KeyCode::Enter, KeyModifiers::NONE) => Action::Select,
+        (KeyCode::Enter, KeyModifiers::SHIFT) => Action::SelectFull,
 
         // Horizontal scrolling
         (KeyCode::Char('h') | KeyCode::Left, KeyModifiers::NONE) => Action::ScrollLeft(4),
@@ -461,7 +289,7 @@ fn map_summary_mode(key: KeyEvent) -> Action {
         }
         (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::CursorDown(1),
         (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::CursorUp(1),
-        (KeyCode::Enter, KeyModifiers::NONE) => Action::SubmitInput,
+        (KeyCode::Enter, KeyModifiers::NONE) => Action::Select,
         (KeyCode::Char('d'), KeyModifiers::NONE) => Action::PendingDCommand,
         (KeyCode::Char('d'), KeyModifiers::CONTROL) => Action::HalfPageDown,
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => Action::HalfPageUp,
@@ -485,10 +313,10 @@ fn map_confirm_mode(key: KeyEvent) -> Action {
 
 fn map_submit_resolver_mode(key: KeyEvent) -> Action {
     match (key.code, key.modifiers) {
-        (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::SubmitResolverDown,
-        (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::SubmitResolverUp,
-        (KeyCode::Enter, KeyModifiers::NONE) => Action::SubmitResolverToggle,
-        (KeyCode::Char(' '), KeyModifiers::NONE) => Action::SubmitResolverToggle,
+        (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::CursorDown(1),
+        (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::CursorUp(1),
+        (KeyCode::Enter, KeyModifiers::NONE) => Action::Select,
+        (KeyCode::Char(' '), KeyModifiers::NONE) => Action::ToggleSelect,
         (KeyCode::Char('s'), KeyModifiers::NONE) => Action::SubmitResolverAdvance,
         (KeyCode::Esc, KeyModifiers::NONE) => Action::ExitMode,
         _ => Action::None,
@@ -511,9 +339,9 @@ fn map_submit_action_picker_mode(key: KeyEvent) -> Action {
 
 fn map_submit_action_picker_mode_with_q_quits(key: KeyEvent, q_quits: bool) -> Action {
     match (key.code, key.modifiers) {
-        (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::SubmitPickerDown,
-        (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::SubmitPickerUp,
-        (KeyCode::Enter, KeyModifiers::NONE) => Action::SubmitPickerConfirm,
+        (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::CursorDown(1),
+        (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::CursorUp(1),
+        (KeyCode::Enter, KeyModifiers::NONE) => Action::Select,
         (KeyCode::Esc, KeyModifiers::NONE) => Action::ExitMode,
         (KeyCode::Char('q'), KeyModifiers::NONE) => q_action(q_quits),
         _ => Action::None,
@@ -527,16 +355,16 @@ fn map_commit_select_mode(key: KeyEvent) -> Action {
 
 fn map_commit_select_mode_with_q_quits(key: KeyEvent, q_quits: bool) -> Action {
     match (key.code, key.modifiers) {
-        (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::CommitSelectDown,
-        (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::CommitSelectUp,
-        (KeyCode::Char(' '), KeyModifiers::NONE) => Action::ToggleCommitSelect,
-        (KeyCode::Enter, KeyModifiers::NONE) => Action::ConfirmCommitSelect,
+        (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::CursorDown(1),
+        (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::CursorUp(1),
+        (KeyCode::Char(' '), KeyModifiers::NONE) => Action::ToggleSelect,
+        (KeyCode::Enter, KeyModifiers::NONE) => Action::Select,
         (KeyCode::Esc, KeyModifiers::NONE) => Action::ExitMode,
         (KeyCode::Char('q'), KeyModifiers::NONE) => q_action(q_quits),
         (KeyCode::Char(':'), _) => Action::EnterCommandMode,
         (KeyCode::Tab, KeyModifiers::NONE) => Action::TargetSelectorTabNext,
         (KeyCode::BackTab, _) => Action::TargetSelectorTabPrev,
-        (KeyCode::Char('/'), _) => Action::BeginTargetFilter,
+        (KeyCode::Char('/'), _) => Action::EnterSearchMode,
         (KeyCode::Char('r'), KeyModifiers::NONE) => Action::TogglePrReviewRequestedFilter,
         // Sessions-tab only; the other tabs ignore these in their dispatch.
         (KeyCode::Char('a'), KeyModifiers::NONE) => Action::SessionsTabToggleShowEmpty,
@@ -566,7 +394,7 @@ pub fn map_file_tree_mode_with_q_quits(key: KeyEvent, leader_key: char, q_quits:
         (KeyCode::Char('e'), KeyModifiers::NONE) => Action::FileTreeFilterExclude,
         (KeyCode::Char('I'), _) => Action::FileTreeClearInclude,
         (KeyCode::Char('E'), _) => Action::FileTreeClearExclude,
-        (KeyCode::Char('/'), _) => Action::FileTreeSearch,
+        (KeyCode::Char('/'), _) => Action::EnterSearchMode,
         _ => map_normal_mode_with_q_quits(key, leader_key, q_quits),
     }
 }
@@ -611,10 +439,10 @@ pub fn map_target_filter_mode(key: KeyEvent) -> Action {
 fn map_theme_picker_mode(key: KeyEvent) -> Action {
     match (key.code, key.modifiers) {
         (KeyCode::Esc, KeyModifiers::NONE) => Action::ExitMode,
-        (KeyCode::Enter, KeyModifiers::NONE) => Action::SubmitInput,
+        (KeyCode::Enter, KeyModifiers::NONE) => Action::Select,
         (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::CursorDown(1),
         (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::CursorUp(1),
-        (KeyCode::Char('/'), KeyModifiers::NONE) => Action::ThemePickerFilter,
+        (KeyCode::Char('/'), KeyModifiers::NONE) => Action::EnterSearchMode,
         _ => Action::None,
     }
 }
@@ -625,10 +453,10 @@ fn map_theme_picker_mode(key: KeyEvent) -> Action {
 fn map_file_picker_mode(key: KeyEvent) -> Action {
     match (key.code, key.modifiers) {
         (KeyCode::Esc, KeyModifiers::NONE) => Action::ExitMode,
-        (KeyCode::Enter, KeyModifiers::NONE) => Action::SubmitInput,
+        (KeyCode::Enter, KeyModifiers::NONE) => Action::Select,
         (KeyCode::Char('j') | KeyCode::Down, KeyModifiers::NONE) => Action::CursorDown(1),
         (KeyCode::Char('k') | KeyCode::Up, KeyModifiers::NONE) => Action::CursorUp(1),
-        (KeyCode::Char('/'), KeyModifiers::NONE) => Action::FilePickerFilter,
+        (KeyCode::Char('/'), KeyModifiers::NONE) => Action::EnterSearchMode,
         _ => Action::None,
     }
 }
@@ -673,7 +501,7 @@ fn map_visual_mode_with_q_quits(key: KeyEvent, q_quits: bool) -> Action {
         (KeyCode::Char('c'), KeyModifiers::NONE) => Action::AddRangeComment,
         (KeyCode::Char('s'), KeyModifiers::NONE) => Action::AddRangeSuggestion,
         (KeyCode::Enter, KeyModifiers::NONE) => Action::AddRangeComment,
-        (KeyCode::Char('y'), KeyModifiers::NONE) => Action::ExportToClipboard,
+        (KeyCode::Char('y'), KeyModifiers::NONE) => Action::CopySelection,
         (KeyCode::Esc, KeyModifiers::NONE) => Action::ExitMode,
         (KeyCode::Char('v') | KeyCode::Char('V'), _) => Action::ExitMode,
         (KeyCode::Char('q'), KeyModifiers::NONE) => q_action(q_quits),
@@ -715,7 +543,7 @@ mod tests {
         );
         assert_eq!(
             map_file_tree_mode(key(KeyCode::Char('/')), DEFAULT_LEADER_KEY),
-            Action::FileTreeSearch
+            Action::EnterSearchMode
         );
     }
 
@@ -908,7 +736,7 @@ mod tests {
             map_summary_mode(key(KeyCode::Char('k'))),
             Action::CursorUp(1)
         );
-        assert_eq!(map_summary_mode(key(KeyCode::Enter)), Action::SubmitInput);
+        assert_eq!(map_summary_mode(key(KeyCode::Enter)), Action::Select);
         assert_eq!(map_summary_mode(key_shift('G')), Action::GoToBottom);
     }
 
@@ -1018,7 +846,7 @@ mod tests {
             map_summary_mode(key(KeyCode::Char('j'))),
             Action::CursorDown(1)
         );
-        assert_eq!(map_summary_mode(key(KeyCode::Enter)), Action::SubmitInput);
+        assert_eq!(map_summary_mode(key(KeyCode::Enter)), Action::Select);
     }
     #[test]
     fn should_not_bind_ctrl_l_in_any_mode_map() {
@@ -1049,8 +877,8 @@ mod tests {
         assert_eq!(map(key(KeyCode::Down)), Action::CursorDown(1));
         assert_eq!(map(key(KeyCode::Char('k'))), Action::CursorUp(1));
         assert_eq!(map(key(KeyCode::Up)), Action::CursorUp(1));
-        assert_eq!(map(key(KeyCode::Char('/'))), Action::FilePickerFilter);
-        assert_eq!(map(key(KeyCode::Enter)), Action::SubmitInput);
+        assert_eq!(map(key(KeyCode::Char('/'))), Action::EnterSearchMode);
+        assert_eq!(map(key(KeyCode::Enter)), Action::Select);
         assert_eq!(map(key(KeyCode::Esc)), Action::ExitMode);
         // Other letters are not text until `/` opens the filter draft.
         assert_eq!(map(key(KeyCode::Char('x'))), Action::None);
@@ -1218,7 +1046,7 @@ mod tests {
         // given / when
         let action = map_commit_select_mode(key(KeyCode::Char('/')));
         // then
-        assert_eq!(action, Action::BeginTargetFilter);
+        assert_eq!(action, Action::EnterSearchMode);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::app::*;
 use crate::handler::handle_theme_picker_action;
-use crate::input::keybindings::Action;
+use crate::input::Action;
 use crate::model::{DiffFile, DiffHunk, DiffLine, FileStatus, LineOrigin};
 use crate::vcs::traits::{VcsBackend, VcsInfo, VcsType};
 use ratatui::style::{Color, Style};
@@ -278,7 +278,7 @@ fn slash_opens_filter_draft_and_typing_does_not_move_selection_until_committed()
     let mut app = app();
     app.enter_theme_picker_mode();
 
-    handle_theme_picker_action(&mut app, Action::ThemePickerFilter);
+    handle_theme_picker_action(&mut app, Action::EnterSearchMode);
     assert!(app.theme_picker_filtering());
 
     for ch in "gruvbox".chars() {
@@ -293,7 +293,7 @@ fn slash_opens_filter_draft_and_typing_does_not_move_selection_until_committed()
 fn committing_filter_narrows_candidates_and_previews_first_match() {
     let mut app = app();
     app.enter_theme_picker_mode();
-    handle_theme_picker_action(&mut app, Action::ThemePickerFilter);
+    handle_theme_picker_action(&mut app, Action::EnterSearchMode);
     for ch in "gruvbox".chars() {
         handle_theme_picker_action(&mut app, Action::InsertChar(ch));
     }
@@ -317,7 +317,7 @@ fn esc_while_filtering_discards_draft_without_changing_applied_filter() {
     let mut app = app();
     app.enter_theme_picker_mode();
     // Apply a filter first via the normal commit path.
-    handle_theme_picker_action(&mut app, Action::ThemePickerFilter);
+    handle_theme_picker_action(&mut app, Action::EnterSearchMode);
     for ch in "nord".chars() {
         handle_theme_picker_action(&mut app, Action::InsertChar(ch));
     }
@@ -325,7 +325,7 @@ fn esc_while_filtering_discards_draft_without_changing_applied_filter() {
     assert_eq!(app.theme_picker.filter.as_deref(), Some("nord"));
 
     // Reopen the draft and abandon a different edit.
-    handle_theme_picker_action(&mut app, Action::ThemePickerFilter);
+    handle_theme_picker_action(&mut app, Action::EnterSearchMode);
     handle_theme_picker_action(&mut app, Action::InsertChar('x'));
     handle_theme_picker_action(&mut app, Action::ExitMode);
 
@@ -339,14 +339,14 @@ fn esc_while_filtering_discards_draft_without_changing_applied_filter() {
 fn empty_filter_commit_clears_the_filter() {
     let mut app = app();
     app.enter_theme_picker_mode();
-    handle_theme_picker_action(&mut app, Action::ThemePickerFilter);
+    handle_theme_picker_action(&mut app, Action::EnterSearchMode);
     for ch in "nord".chars() {
         handle_theme_picker_action(&mut app, Action::InsertChar(ch));
     }
     handle_theme_picker_action(&mut app, Action::SubmitInput);
     assert!(app.theme_picker.filter.is_some());
 
-    handle_theme_picker_action(&mut app, Action::ThemePickerFilter);
+    handle_theme_picker_action(&mut app, Action::EnterSearchMode);
     handle_theme_picker_action(&mut app, Action::ClearLine);
     handle_theme_picker_action(&mut app, Action::SubmitInput);
 
@@ -453,7 +453,7 @@ fn confirm_rehighlights_every_loaded_file_not_just_the_visible_one() {
     // already covers this) -- confirming must catch it up.
     assert_eq!(addition_bg(&app.diff_files[1]), Some(MARKER_BG));
 
-    handle_theme_picker_action(&mut app, Action::SubmitInput);
+    handle_theme_picker_action(&mut app, Action::Select);
     assert_eq!(app.input_mode, InputMode::Normal);
 
     assert_eq!(addition_bg(&app.diff_files[0]), Some(chosen_syntax_add_bg));
@@ -484,7 +484,7 @@ fn selection_marker_follows_the_theme_and_cancel_restores_it() {
 fn should_paste_into_the_filter_draft_as_one_line() {
     let mut app = app();
     app.enter_theme_picker_mode();
-    handle_theme_picker_action(&mut app, Action::ThemePickerFilter);
+    handle_theme_picker_action(&mut app, Action::EnterSearchMode);
 
     crate::handler::handle_paste(&mut app, "da\nrk".into());
 
@@ -495,7 +495,7 @@ fn should_paste_into_the_filter_draft_as_one_line() {
 fn should_drop_carriage_returns_when_pasting_into_the_filter_draft() {
     let mut app = app();
     app.enter_theme_picker_mode();
-    handle_theme_picker_action(&mut app, Action::ThemePickerFilter);
+    handle_theme_picker_action(&mut app, Action::EnterSearchMode);
 
     crate::handler::handle_paste(&mut app, "da\r\nr\rk".into());
 
@@ -509,7 +509,7 @@ fn confirming_without_navigating_applies_the_selected_theme() {
     app.enter_theme_picker_mode();
     assert_eq!(app.theme_picker.selected_name(), Some("dark"));
 
-    handle_theme_picker_action(&mut app, Action::SubmitInput);
+    handle_theme_picker_action(&mut app, Action::Select);
 
     assert_eq!(app.theme.panel_bg, crate::theme::Theme::dark().panel_bg);
 }
@@ -554,7 +554,7 @@ fn failed_confirm_after_preview_restores_original_theme_and_cached_syntax() {
     // The previewed row vanishes (e.g. a local theme file deleted) before Enter.
     app.theme_picker.candidates = vec!["deleted-local-theme".to_string()];
     app.theme_picker.select(0);
-    handle_theme_picker_action(&mut app, Action::SubmitInput);
+    handle_theme_picker_action(&mut app, Action::Select);
 
     assert_eq!(app.theme.panel_bg, original_panel_bg);
     assert_eq!(app.theme.syntax_add_bg, original_add_bg);

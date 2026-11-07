@@ -6,7 +6,7 @@
 //! routed `WorkingTree` to the unstaged-only loader, so it guarded nothing.
 
 use crate::app::*;
-use crate::input::keybindings::Action;
+use crate::input::Action;
 use crate::model::FileStatus;
 use crate::review_store::{SessionKind, SessionSummary};
 use crate::vcs::traits::{ResolvedRevisionRange, VcsType};
