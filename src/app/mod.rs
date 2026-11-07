@@ -1239,8 +1239,6 @@ pub struct App {
     pub(crate) comment_preferred_column: Option<usize>,
     /// Config `comment_vim`: vim modal editing in the comment box.
     pub comment_vim_enabled: bool,
-    /// Config `q_quits`: restore bare `q` as a quit key in review modes.
-    pub q_quits: bool,
     /// Spaces inserted by Tab while typing in the vim comment box (config
     /// `comment_tab_width`, default 4).
     pub comment_tab_width: usize,
@@ -1437,6 +1435,10 @@ pub struct App {
     pub up_released_since_arm: bool,
     pub cursor_line_highlight: bool,
     pub leader_key: char,
+    /// Effective key bindings (defaults plus config `[keys]`).
+    pub keymap: crate::input::Keymap,
+    /// Keys typed so far of an unfinished sequence such as `z` or `<leader>`.
+    pub pending_keys: Vec<crate::input::KeyChord>,
     pub scroll_offset: usize,
     /// Lines scrolled per vertical mouse wheel tick (config
     /// `mouse_scroll_lines`, default 3).
