@@ -435,7 +435,16 @@ impl Keymap {
                             }
                             let displaced = insert(&mut map, chords, action.clone(), keys.clone());
                             if source == Source::User {
-                                for (old_keys, old_action) in displaced {
+                                for (old_chords, old_keys, old_action) in displaced {
+                                    let unbound_by_user = parsed.iter().any(|row| {
+                                        row.3 == Source::User
+                                            && row.2 == Action::None
+                                            && row.1 == old_chords
+                                            && leaf.layers().contains(&row.0)
+                                    });
+                                    if unbound_by_user {
+                                        continue;
+                                    }
                                     warnings.insert(format!(
                                         "Warning: keys.{} '{keys}' replaces '{old_keys}' ({}); bind '{old_keys}' = \"none\" to silence this",
                                         layer.name(),
@@ -537,7 +546,7 @@ fn insert(
     chords: &[KeyChord],
     action: Action,
     keys: String,
-) -> Vec<(String, Action)> {
+) -> Vec<(Vec<KeyChord>, String, Action)> {
     let mut displaced = Vec::new();
     map.remove(chords);
     if action == Action::None {
@@ -552,7 +561,7 @@ fn insert(
         .collect();
     for existing in conflicts {
         if let Some((old_action, old_keys)) = map.remove(&existing) {
-            displaced.push((old_keys, old_action));
+            displaced.push((existing, old_keys, old_action));
         }
     }
     map.insert(chords.to_vec(), (action, keys));
@@ -866,14 +875,20 @@ mod tests {
             "{warnings:?}"
         );
 
-        let (_, warnings) = Keymap::build(
-            DEFAULT_LEADER_KEY,
-            &[
+        for bindings in [
+            [
                 Binding::new(K::Normal, "dd", A::None),
                 Binding::new(K::Normal, "d", A::HalfPageDown),
             ],
-        );
-        assert!(warnings.is_empty(), "{warnings:?}");
+            [
+                Binding::new(K::Normal, "d", A::HalfPageDown),
+                Binding::new(K::Normal, "dd", A::None),
+            ],
+        ] {
+            let (keymap, warnings) = Keymap::build(DEFAULT_LEADER_KEY, &bindings);
+            assert!(warnings.is_empty(), "{warnings:?}");
+            assert_eq!(run(&keymap, K::Diff, "d"), Resolution::Run(A::HalfPageDown));
+        }
     }
 
     #[test]

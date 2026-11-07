@@ -182,7 +182,8 @@ pub enum Action {
     OpenSessions,
     TargetSelectorTabNext,
     TargetSelectorTabPrev,
-    /// Toggle PR tab between all open PRs and PRs awaiting your review.
+    /// Cycle the PR tab scope: all open PRs, review requested, requested by
+    /// name (GitHub).
     TogglePrReviewRequestedFilter,
     /// Sessions tab: show or hide sessions holding no review progress.
     SessionsTabToggleShowEmpty,
@@ -844,7 +845,7 @@ pub const ACTIONS: &[ActionSpec] = &[
         Action::TogglePrReviewRequestedFilter,
         "toggle-review-requested",
         Ignore,
-        "Toggle PRs awaiting your review",
+        "Cycle the PR scope: all, review requested, requested by name",
     ),
     spec(
         Action::SessionsTabToggleShowEmpty,
@@ -1047,6 +1048,18 @@ mod tests {
             Some(Action::ToggleShowReviewed)
         );
         assert_eq!(Action::from_command("nope"), None);
+    }
+
+    #[test]
+    fn should_document_every_action_in_the_config_reference() {
+        let docs = include_str!("../../docs/CONFIG.md");
+        for spec in ACTIONS {
+            assert!(
+                docs.contains(&format!("| `{}` |", spec.name)),
+                "docs/CONFIG.md is missing action `{}`",
+                spec.name
+            );
+        }
     }
 
     #[test]

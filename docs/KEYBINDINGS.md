@@ -3,6 +3,7 @@
 Full reference. Press `?` inside tuicr for an in-app version of this list.
 
 `<leader>` defaults to `;`. Override it with `leader = ","` in `~/.config/tuicr/config.toml`.
+Rebind any key under `[keys]` in the same file; see [Keys](CONFIG.md#keys).
 
 ## Navigation
 

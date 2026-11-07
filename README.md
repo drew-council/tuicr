@@ -294,6 +294,9 @@ editor = "nvim"               # editor for `e` / `:edit`; overrides $EDITOR
 comment_vim = false           # vim modal editing in the review comment box
 relative_line_numbers = false # show rendered-row distances in the diff gutter
 
+[keys.normal]                 # rebind keys; see docs/CONFIG.md#keys
+"<C-s>" = "submit"
+
 [[comment_types]]
 id = "issue"
 color = "red"

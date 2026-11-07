@@ -268,12 +268,15 @@ fn main() -> anyhow::Result<()> {
                 if let Some(leader) = cfg.leader {
                     app.leader_key = leader;
                 }
+                // `q_quits` is shorthand for `q = "quit"`; `[keys]` can still
+                // override it.
                 let mut bindings = Vec::new();
                 if cfg.q_quits == Some(true) {
                     for context in Q_QUITS_CONTEXTS {
                         bindings.push(Binding::new(*context, "q", Action::Quit));
                     }
                 }
+                bindings.extend(cfg.keys.iter().cloned());
                 let (keymap, keymap_warnings) = Keymap::build(app.leader_key, &bindings);
                 app.keymap = keymap;
                 startup_warnings.extend(keymap_warnings);
