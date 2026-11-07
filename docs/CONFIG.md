@@ -267,6 +267,8 @@ example `toggle-select` in lists and `comment-range` in visual selection.
 | `export` | Copy the review to the clipboard | `:clip`, `:export` |
 | `copy-comment` | Copy the comment at cursor |  |
 | `copy-url` | Copy the pull request URL | `:copy-url` |
+| `open-url` | Open the pull request in the browser | `:open-url`, `:browse` |
+| `copy-branch` | Copy the review's branch name | `:branch` |
 | `summary` | List pending comments | `:summary` |
 | `clear` | Clear comments and reviewed marks | `:clear` |
 | `clear-comments` | Clear comments | `:clearc` |

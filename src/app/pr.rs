@@ -295,6 +295,49 @@ impl App {
         self.move_cursor_to_annotation(target);
     }
 
+    /// Branch name for the active review: the PR head branch while reviewing a
+    /// pull request, otherwise the local checkout's branch. `None` when the
+    /// backend can't name one (detached HEAD, anonymous jj change).
+    pub fn review_branch_name(&self) -> Option<String> {
+        let name = match &self.diff_source {
+            DiffSource::PullRequest(pr) => pr.head_ref_name.clone(),
+            _ => self.vcs_info.branch_name.clone()?,
+        };
+        (!name.is_empty()).then_some(name)
+    }
+
+    /// Copy the active review's branch name to the clipboard (`:branch`).
+    pub fn copy_branch_name(&mut self) {
+        let Some(branch) = self.review_branch_name() else {
+            self.set_warning("No branch name available for this review");
+            return;
+        };
+        match crate::output::copy_text_to_clipboard(&branch) {
+            Ok(via_terminal) => {
+                let suffix = if via_terminal { " (via terminal)" } else { "" };
+                self.set_message(format!("Copied branch {branch}{suffix}"));
+            }
+            Err(e) => self.set_warning(format!("Failed to copy branch: {e}")),
+        }
+    }
+
+    /// Open the active pull request in the system browser (`:open-url`).
+    pub fn open_pr_in_browser(&mut self) {
+        let DiffSource::PullRequest(pr) = &self.diff_source else {
+            self.set_warning(":open-url only applies in PR mode");
+            return;
+        };
+        if pr.url.is_empty() {
+            self.set_warning("No URL available for this pull request");
+            return;
+        }
+        let url = pr.url.clone();
+        match crate::process::open_in_browser(&url) {
+            Ok(()) => self.set_message(format!("Opened {url}")),
+            Err(e) => self.set_warning(format!("Failed to open browser: {e}")),
+        }
+    }
+
     /// Persist the active inline selection on the session (PR mode only).
     /// `None` is written when the range covers all commits so re-open
     /// doesn't trigger an unnecessary subset re-fetch.

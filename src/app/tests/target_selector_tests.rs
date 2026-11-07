@@ -2983,6 +2983,61 @@ fn should_treat_commits_as_alias_for_local_target_selector() {
 }
 
 #[test]
+fn should_resolve_pr_head_branch_for_branch_command_in_pr_mode() {
+    // given
+    let mut app = build_app();
+    app.diff_source = DiffSource::PullRequest(Box::new(PullRequestDiffSource::from_details(
+        &test_pr_details(42, "branch"),
+    )));
+    // when
+    let branch = app.review_branch_name();
+    // then: the PR head branch wins over the local checkout's branch
+    assert_eq!(branch.as_deref(), Some("feat"));
+}
+
+#[test]
+fn should_resolve_local_branch_for_branch_command_outside_pr_mode() {
+    // given
+    let app = build_app();
+    // when
+    let branch = app.review_branch_name();
+    // then
+    assert_eq!(branch.as_deref(), Some("main"));
+}
+
+#[test]
+fn should_warn_when_open_url_used_outside_pr_mode() {
+    use crate::handler::handle_command_action;
+    use crate::input::Action;
+    // given
+    let mut app = build_app();
+    app.input_mode = crate::app::InputMode::Command;
+    app.command_buffer = "open-url".to_string();
+    // when
+    handle_command_action(&mut app, Action::SubmitInput);
+    // then
+    let msg = app
+        .message
+        .as_ref()
+        .expect("expected warning on message bar");
+    assert!(matches!(msg.message_type, MessageType::Warning));
+    assert!(
+        msg.content.contains("PR mode"),
+        "got message: {}",
+        msg.content
+    );
+}
+
+#[test]
+fn should_resolve_no_branch_when_local_checkout_is_unnamed() {
+    // given
+    let mut app = build_app();
+    app.vcs_info.branch_name = None;
+    // when / then
+    assert_eq!(app.review_branch_name(), None);
+}
+
+#[test]
 fn should_open_pending_comment_summary_from_command_mode() {
     let mut app = build_app();
     app.input_mode = InputMode::Command;

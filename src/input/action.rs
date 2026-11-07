@@ -80,6 +80,10 @@ pub enum Action {
     WriteQuit,
     Reload,
     CopyUrl,
+    /// Open the pull request in the browser.
+    OpenUrl,
+    /// Copy the review's branch name.
+    CopyBranch,
     /// Clear comments and reviewed marks.
     ClearAll,
     ClearComments,
@@ -612,6 +616,20 @@ pub const ACTIONS: &[ActionSpec] = &[
         "Copy the pull request URL",
     )
     .cmd(&["copy-url"]),
+    spec(
+        Action::OpenUrl,
+        "open-url",
+        Ignore,
+        "Open the pull request in the browser",
+    )
+    .cmd(&["open-url", "browse"]),
+    spec(
+        Action::CopyBranch,
+        "copy-branch",
+        Ignore,
+        "Copy the review's branch name",
+    )
+    .cmd(&["branch"]),
     spec(Action::Summary, "summary", Ignore, "List pending comments").cmd(&["summary"]),
     spec(
         Action::ClearAll,

@@ -452,6 +452,14 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
             Span::raw("Add review comment"),
         ),
         key_row(
+            keys(K::Diff, &[A::SubmitPicker]),
+            Span::raw("Submit review to the forge (same as `:submit`)"),
+        ),
+        key_row(
+            keys(K::Diff, &[A::OpenUrl]),
+            Span::raw("Open the PR in the browser (same as `:open-url`)"),
+        ),
+        key_row(
             keys(K::Diff, &[A::EditComment]),
             Span::raw("Edit comment at cursor"),
         ),
@@ -586,6 +594,13 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         ]),
         Line::from(vec![
             Span::styled(
+                "  :open-url ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("Open the PR in the browser (alias `:browse`; PR mode)"),
+        ]),
+        Line::from(vec![
+            Span::styled(
                 "  :wrap     ",
                 Style::default().add_modifier(Modifier::BOLD),
             ),
@@ -597,6 +612,13 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
                 Style::default().add_modifier(Modifier::BOLD),
             ),
             Span::raw("Open this help screen"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  :branch   ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("Copy the review's branch name to clipboard"),
         ]),
         Line::from(vec![
             Span::styled(

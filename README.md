@@ -101,7 +101,7 @@ Git's `diff.renames` and `diff.renameLimit` settings. Working-tree reviews inclu
 untracked destinations in rename detection, so a move can appear as `R` before staging.
 
 Inside tuicr, navigate with `j`/`k`, press `c` to comment, then `y` to copy the review or
-`:submit` to push it to GitHub, GitLab, Gitea, Bitbucket, Azure DevOps, or Gerrit. When reopening a
+`:submit` (or `<leader>S`) to push it to GitHub, GitLab, Gitea, Bitbucket, Azure DevOps, or Gerrit. When reopening a
 pull request you've reviewed before, tuicr preselects commits newer than your latest submitted
 review when that metadata is available; commits already covered by that review are marked with
 `✓` in the inline selector.

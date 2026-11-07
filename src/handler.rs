@@ -91,6 +91,8 @@ fn handle_app_action(app: &mut App, invocation: &Invocation) -> bool {
         Action::EditFile => app.queue_editor_for_focused_item(),
         Action::ExportToClipboard => handle_export(app),
         Action::CopyUrl => handle_copy_pr_url(app),
+        Action::OpenUrl => app.open_pr_in_browser(),
+        Action::CopyBranch => app.copy_branch_name(),
         Action::ClearAll => app.clear_comments(ClearScope::CommentsAndReviewed),
         Action::ClearComments => app.clear_comments(ClearScope::CommentsOnly),
         Action::ToggleHelp => app.toggle_help(),
@@ -1920,6 +1922,17 @@ mod command_tests {
     #[test]
     fn parses_copy_url_command() {
         assert_eq!(runs("copy-url"), Some(Action::CopyUrl.into()));
+    }
+
+    #[test]
+    fn parses_open_url_command_and_alias() {
+        assert_eq!(runs("open-url"), Some(Action::OpenUrl.into()));
+        assert_eq!(runs("browse"), Some(Action::OpenUrl.into()));
+    }
+
+    #[test]
+    fn parses_branch_command() {
+        assert_eq!(runs("branch"), Some(Action::CopyBranch.into()));
     }
 
     #[test]
