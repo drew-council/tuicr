@@ -71,6 +71,8 @@ pub struct ActionSpec {
     pub count: CountMode,
     /// One-line description for the help popup.
     pub help: &'static str,
+    /// `:` command names that run this action. Often empty.
+    pub commands: &'static [&'static str],
 }
 
 /// Declares [`Action`] and [`ACTIONS`] from one list, so a bindable action
@@ -80,7 +82,7 @@ macro_rules! actions {
     (
         bindable { $(
             $(#[$doc:meta])*
-            $variant:ident $(($ty:ty = $step:expr))? => $name:literal, $count:ident, $help:literal;
+            $variant:ident $(($ty:ty = $step:expr))? => $name:literal, $count:ident, $help:literal $(, [$($command:literal),+])?;
         )* }
         internal { $( $(#[$idoc:meta])* $internal:ident $(($ity:ty))? ),* $(,)? }
     ) => {
@@ -94,7 +96,7 @@ macro_rules! actions {
             $( $(#[$idoc])* $internal $(($ity))?, )*
         }
 
-        /// Every bindable action. Order is the help popup's order within a context.
+        /// Every bindable action. Command completion cycles in this order.
         pub const ACTIONS: &[ActionSpec] = &[
             $(
                 ActionSpec {
@@ -102,6 +104,7 @@ macro_rules! actions {
                     name: $name,
                     count: CountMode::$count,
                     help: $help,
+                    commands: &[$($($command),+)?],
                 },
             )*
         ];
@@ -140,9 +143,20 @@ actions! {
         CycleCommitNext => "next-commit", Ignore, "Show next commit";
         /// Cycle inline commit selector to previous individual commit (`(`)
         CycleCommitPrev => "prev-commit", Ignore, "Show previous commit";
+        /// Put the cursor line at the middle of the view (`zz`).
+        CenterCursor => "center-cursor", Ignore, "Center the cursor line";
+        /// Put the cursor line at the top of the view (`zt`).
+        CursorToTop => "cursor-to-top", Ignore, "Scroll the cursor line to the top";
+        /// Put the cursor line at the bottom of the view (`zb`).
+        CursorToBottom => "cursor-to-bottom", Ignore, "Scroll the cursor line to the bottom";
         // Panels and lists
         ToggleFocus => "focus-next", Ignore, "Focus next pane";
         ToggleFocusReverse => "focus-prev", Ignore, "Focus previous pane";
+        FocusPaneLeft => "focus-left", Ignore, "Focus the pane to the left";
+        FocusPaneRight => "focus-right", Ignore, "Focus the pane to the right";
+        FocusPaneUp => "focus-up", Ignore, "Focus the pane above";
+        FocusPaneDown => "focus-down", Ignore, "Focus the pane below";
+        ToggleFileList => "toggle-file-list", Ignore, "Show or hide the file list";
         /// Activate the item under the cursor (Enter).
         Select => "select", Ignore, "Open or activate the item under the cursor";
         /// Activate the item under the cursor fully (Shift-Enter).
@@ -161,35 +175,81 @@ actions! {
         ToggleHunkReviewed => "toggle-hunk-reviewed", Ignore, "Toggle hunk reviewed";
         AddLineComment => "comment-line", Ignore, "Comment on the cursor line";
         AddFileComment => "comment-file", Ignore, "Comment on the file";
+        AddReviewComment => "comment-review", Ignore, "Comment on the whole review";
         EditComment => "edit-comment", Ignore, "Edit the comment at cursor";
         /// Edit the comment at cursor with the text cursor at end (vim `A`).
         EditCommentAtEnd => "edit-comment-at-end", Ignore, "Edit the comment at cursor, text cursor at end";
-        EditFile => "edit-file", Ignore, "Open the focused file in $EDITOR";
+        /// Delete the comment under the cursor (`dd`).
+        DeleteComment => "delete-comment", Ignore, "Delete the comment at cursor";
+        EditFile => "edit-file", Ignore, "Open the focused file in $EDITOR", ["edit"];
         EnterVisualMode => "visual-mode", Ignore, "Start a visual selection";
         AddRangeComment => "comment-range", Ignore, "Comment on the selection";
         AddRangeSuggestion => "suggest-range", Ignore, "Suggest a change to the selection";
         /// Copy the visual selection's text.
         CopySelection => "copy-selection", Ignore, "Copy the selected text";
-        ExportToClipboard => "export", Ignore, "Copy the review to the clipboard";
+        ExportToClipboard => "export", Ignore, "Copy the review to the clipboard", ["clip", "export"];
         /// Copy just the comment under the cursor (`Y`), not the whole review.
         CopyCommentAtCursor => "copy-comment", Ignore, "Copy the comment at cursor";
+        CopyUrl => "copy-url", Ignore, "Copy the pull request URL (PR mode)", ["copy-url"];
+        Summary => "summary", Ignore, "List pending comments", ["summary"];
+        /// Clear comments and reviewed marks.
+        ClearAll => "clear", Ignore, "Clear comments and reviewed marks", ["clear"];
+        ClearComments => "clear-comments", Ignore, "Clear comments", ["clearc"];
+        Stage => "stage", Ignore, "Stage reviewed files", ["stage"];
         // Search
         /// Open the `/` prompt. Lists interpret it as their filter prompt.
         EnterSearchMode => "search", Ignore, "Search (filter in lists)";
         SearchNext => "search-next", Ignore, "Next search match";
         SearchPrev => "search-prev", Ignore, "Previous search match";
         ClearSearchHighlight => "clear-search-highlight", Ignore, "Clear search highlight";
-        // Modes and session
+        // Session
+        /// Quit, refusing while unsaved comments exist (`:q`).
+        Quit => "quit", Ignore, "Quit", ["q", "quit"];
+        /// Quit from a key (`q` under `q_quits`): unsaved comments in a review
+        /// pane take a second press.
+        ConfirmQuit => "confirm-quit", Ignore, "Quit; unsaved comments take a second press";
+        /// Quit without saving (`:q!`, `ZQ`).
+        ForceQuit => "force-quit", Ignore, "Quit without saving", ["q!", "quit!"];
+        Write => "write", Ignore, "Save the session", ["w", "write"];
+        /// Save, offer to copy the review, then quit (`:x`).
+        WriteQuit => "write-quit", Ignore, "Save and quit, asking to copy the review if comments exist", ["x", "wq"];
+        /// Save, copy the review without asking, then quit (`ZZ`).
+        ExportQuit => "export-quit", Ignore, "Save, copy the review if comments exist, and quit";
+        Reload => "reload", Ignore, "Reload the diff and comments (PR mode: refetch the PR)", ["e", "reload"];
+        // Modes and screens
         EnterCommandMode => "command-mode", Ignore, "Enter command mode";
-        ToggleHelp => "help", Ignore, "Toggle help";
+        ToggleHelp => "help", Ignore, "Toggle help", ["help", "h"];
+        MessageDetails => "messages", Ignore, "Show full details for the current error", ["messages"];
+        Version => "version", Ignore, "Show the version", ["version"];
+        CheckUpdate => "check-update", Ignore, "Check for updates", ["update"];
         ExitMode => "exit", Ignore, "Close or cancel";
-        Quit => "quit", Ignore, "Quit";
         /// Clear the terminal and repaint every cell on the next frame (`Ctrl-l`).
         Redraw => "redraw", Ignore, "Redraw the screen";
-        // Dialogs
-        ConfirmYes => "yes", Ignore, "Confirm";
-        ConfirmNo => "no", Ignore, "Decline";
+        // Options
+        SetWrap => "set-wrap", Ignore, "Wrap long lines", ["set wrap"];
+        SetNoWrap => "set-nowrap", Ignore, "Do not wrap long lines", ["set nowrap"];
+        ToggleWrap => "toggle-wrap", Ignore, "Toggle line wrap", ["set wrap!", "wrap"];
+        SetRelativeNumber => "set-relativenumber", Ignore, "Show relative line numbers", ["set relativenumber"];
+        SetNoRelativeNumber => "set-norelativenumber", Ignore, "Show absolute line numbers", ["set norelativenumber"];
+        ToggleRelativeNumber => "toggle-relativenumber", Ignore, "Toggle relative line numbers", ["set relativenumber!"];
+        ToggleVim => "toggle-vim", Ignore, "Toggle vim editing in comments", ["vim", "set vim!"];
+        SetVim => "set-vim", Ignore, "Use vim editing in comments", ["set vim"];
+        SetNoVim => "set-novim", Ignore, "Use plain editing in comments", ["novim", "set novim"];
+        ShowCommits => "show-commits", Ignore, "Show the commit selector", ["set commits"];
+        HideCommits => "hide-commits", Ignore, "Hide the commit selector", ["set nocommits"];
+        ToggleCommits => "toggle-commits", Ignore, "Show or hide the commit selector", ["set commits!"];
+        ShowReviewed => "show-reviewed", Ignore, "Show reviewed files", ["set reviewed"];
+        HideReviewed => "hide-reviewed", Ignore, "Hide reviewed files", ["set noreviewed"];
+        ToggleShowReviewed => "toggle-show-reviewed", Ignore, "Show or hide reviewed files", ["reviewed", "set reviewed!"];
+        SetMinimalUi => "set-minimal", Ignore, "Use the minimal UI", ["set minimal"];
+        SetNoMinimalUi => "set-nominimal", Ignore, "Use the full UI", ["set nominimal"];
+        ToggleMinimalUi => "toggle-minimal", Ignore, "Toggle the minimal UI", ["set minimal!"];
+        ToggleDiffView => "toggle-diff-view", Ignore, "Switch unified and side-by-side diff", ["diff"];
+        ToggleSingleFileView => "toggle-single-file-view", Ignore, "Toggle single-file view", ["focus", "f"];
         // Review target selector
+        OpenCommits => "open-commits", Ignore, "Open the review target selector on Local", ["commits", "targets"];
+        OpenPullRequests => "open-prs", Ignore, "Open the review target selector on Pull Requests", ["prs"];
+        OpenSessions => "open-sessions", Ignore, "Open the review target selector on Sessions", ["sessions", "reviews"];
         TargetSelectorTabNext => "next-tab", Ignore, "Next tab";
         TargetSelectorTabPrev => "prev-tab", Ignore, "Previous tab";
         /// Toggle PR tab between all open PRs and PRs awaiting your review.
@@ -198,11 +258,26 @@ actions! {
         SessionsTabToggleShowEmpty => "toggle-empty-sessions", Ignore, "Show or hide empty sessions";
         /// Sessions tab: delete the session under the cursor, after a confirm.
         SessionsTabDelete => "delete-session", Ignore, "Delete the session under the cursor";
-        // Submit flow
+        // Pull request review
+        /// Open the submit action picker (`:submit`).
+        SubmitPicker => "submit", Ignore, "Pick a review event to submit (PR mode)", ["submit"];
+        SubmitComment => "submit-comment", Ignore, "Submit a COMMENT review", ["submit comment"];
+        SubmitApprove => "submit-approve", Ignore, "Submit an APPROVE review", ["submit approve"];
+        SubmitRequestChanges => "submit-request-changes", Ignore, "Submit a REQUEST_CHANGES review", ["submit request-changes"];
+        SubmitDraft => "submit-draft", Ignore, "Push a pending (draft) review", ["submit draft"];
         /// Advance from the resolver to final confirmation.
         SubmitResolverAdvance => "submit-advance", Ignore, "Continue to submit confirmation";
         /// Reload the PR from the submit confirmation (stale-head warning only).
         SubmitReloadPr => "reload-pr", Ignore, "Reload the pull request";
+        CommentsUnresolved => "comments-unresolved", Ignore, "Show unresolved remote comments (PR mode)", ["comments unresolved"];
+        CommentsAll => "comments-all", Ignore, "Show all remote comments, resolved and outdated included (PR mode)", ["comments all"];
+        CommentsHide => "comments-hide", Ignore, "Hide remote comments (PR mode)", ["comments hide"];
+        ThemePicker => "theme-picker", Ignore, "Pick a theme", ["theme"];
+        /// Open the file picker popup (`<leader>p`).
+        FilePicker => "file-picker", Ignore, "Jump to a file by path";
+        // Dialogs
+        ConfirmYes => "yes", Ignore, "Confirm";
+        ConfirmNo => "no", Ignore, "Decline";
     }
     internal {
         Digit(u8),
@@ -262,6 +337,14 @@ impl Action {
         self.spec().map(|spec| spec.name)
     }
 
+    /// Look up the action a `:` command name runs.
+    pub fn from_command(command: &str) -> Option<Action> {
+        ACTIONS
+            .iter()
+            .find(|spec| spec.commands.contains(&command))
+            .map(|spec| spec.action.clone())
+    }
+
     pub fn count_mode(&self) -> CountMode {
         self.spec().map_or(CountMode::Ignore, |spec| spec.count)
     }
@@ -317,6 +400,30 @@ mod tests {
                 spec.name
             );
         }
+    }
+
+    #[test]
+    fn should_give_every_command_name_one_action() {
+        let mut commands = HashSet::new();
+        for spec in ACTIONS {
+            for command in spec.commands {
+                assert!(commands.insert(*command), "duplicate command {command}");
+            }
+        }
+    }
+
+    #[test]
+    fn should_look_up_actions_by_command_name() {
+        assert_eq!(Action::from_command("wq"), Some(Action::WriteQuit));
+        assert_eq!(
+            Action::from_command("set relativenumber!"),
+            Some(Action::ToggleRelativeNumber)
+        );
+        assert_eq!(
+            Action::from_command("reviewed"),
+            Some(Action::ToggleShowReviewed)
+        );
+        assert_eq!(Action::from_command("nope"), None);
     }
 
     #[test]

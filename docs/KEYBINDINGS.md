@@ -295,7 +295,7 @@ In command mode,
 | `:comments unresolved` | Show unresolved remote comments (PR mode, default) |
 | `:comments all` | Show all remote comments including resolved and outdated |
 | `:comments hide` | Hide remote comments in PR mode |
-| `:set wrap` | Enable line wrap in diff view |
+| `:set wrap` / `:set nowrap` | Enable / disable line wrap in diff view |
 | `:set wrap!` (`:wrap`) | Toggle line wrap in diff view |
 | `:set relativenumber` / `:set norelativenumber` | Enable / disable relative rendered-row numbers |
 | `:set relativenumber!` | Toggle relative rendered-row numbers |
