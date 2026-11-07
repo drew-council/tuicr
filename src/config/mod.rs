@@ -218,8 +218,7 @@ pub struct AppConfig {
     /// `<leader>s` or `:set commits!`.
     pub show_commits: Option<bool>,
     /// Whether files already marked reviewed appear in the file tree and the
-    /// diff. Defaults to true; toggle at runtime with `H` (file tree) or
-    /// `:set reviewed!`.
+    /// diff. Defaults to true; toggle at runtime with `:set reviewed!`.
     pub show_reviewed: Option<bool>,
     pub diff_view: Option<String>,
     /// Inline commit selector display order: `"descending"` (newest-first,
