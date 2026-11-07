@@ -85,6 +85,10 @@ pub enum Action {
     ExportQuit,
     Reload,
     CopyUrl,
+    /// Open the pull request in the browser.
+    OpenUrl,
+    /// Copy the review's branch name.
+    CopyBranch,
     /// Clear comments and reviewed marks.
     ClearAll,
     ClearComments,
@@ -394,6 +398,8 @@ pub const ACTIONS: &[ActionSpec] = &[
     spec(A::ExportToClipboard, "export", Ignore, "Copy the review to the clipboard").cmd(&["clip", "export"]),
     spec(A::CopyCommentAtCursor, "copy-comment", Ignore, "Copy the comment at cursor"),
     spec(A::CopyUrl, "copy-url", Ignore, "Copy the pull request URL (PR mode)").cmd(&["copy-url"]),
+    spec(A::OpenUrl, "open-url", Ignore, "Open the pull request in the browser (PR mode)").cmd(&["open-url", "browse"]),
+    spec(A::CopyBranch, "copy-branch", Ignore, "Copy the review's branch name").cmd(&["branch"]),
     spec(A::Summary, "summary", Ignore, "List pending comments").cmd(&["summary"]),
     spec(A::ClearAll, "clear", Ignore, "Clear comments and reviewed marks").cmd(&["clear"]),
     spec(A::ClearComments, "clear-comments", Ignore, "Clear comments").cmd(&["clearc"]),

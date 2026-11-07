@@ -259,6 +259,37 @@ fn wait_with_stdin(
     Ok(output)
 }
 
+/// Open `url` with the platform's default handler.
+///
+/// Returns once the opener is spawned. Its stdio is detached so it cannot
+/// write over the TUI, and a thread reaps it so it does not linger as a zombie.
+pub fn open_in_browser(url: &str) -> std::io::Result<()> {
+    let mut child = browser_command(url)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+fn browser_command(url: &str) -> Command {
+    let mut command = if cfg!(target_os = "macos") {
+        Command::new("open")
+    } else if cfg!(windows) {
+        // `cmd /C start` would reinterpret `&` in query strings.
+        let mut command = Command::new("rundll32");
+        command.arg("url.dll,FileProtocolHandler");
+        command
+    } else {
+        Command::new("xdg-open")
+    };
+    command.arg(url);
+    command
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

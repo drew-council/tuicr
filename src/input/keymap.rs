@@ -203,6 +203,8 @@ pub const DEFAULT_BINDINGS: &[Binding] = &[
     B::new(K::Normal, "<leader>k", A::FocusPaneUp),
     B::new(K::Normal, "<leader>j", A::FocusPaneDown),
     B::new(K::Normal, "<leader>c", A::AddReviewComment),
+    B::new(K::Normal, "<leader>S", A::SubmitPicker),
+    B::new(K::Normal, "<leader>o", A::OpenUrl),
     B::new(K::Normal, "<leader>s", A::ToggleCommits),
     B::new(K::Normal, "<leader>f", A::ToggleSingleFileView),
     B::new(K::Normal, "<leader>n", A::ToggleRelativeNumber),
@@ -1049,7 +1051,8 @@ mod tests {
             label(K::Diff, &[A::FocusPaneLeft, A::FocusPaneRight]),
             ";h/;l"
         );
-        assert_eq!(label(K::Diff, &[A::SubmitPicker]), "\u{2014}");
+        assert_eq!(label(K::Diff, &[A::Version]), "\u{2014}");
+        assert_eq!(label(K::Diff, &[A::SubmitPicker]), ";S");
         assert_eq!(
             Keymap::with_defaults(' ').label(K::Diff, &[A::ToggleFileList], ' '),
             "\u{2423}e"

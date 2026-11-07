@@ -506,6 +506,14 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
             Span::raw("Add review comment"),
         ),
         key_row(
+            keys(K::Diff, &[A::SubmitPicker]),
+            Span::raw("Submit review to the forge (same as `:submit`)"),
+        ),
+        key_row(
+            keys(K::Diff, &[A::OpenUrl]),
+            Span::raw("Open the PR in the browser (same as `:open-url`)"),
+        ),
+        key_row(
             keys(K::Diff, &[A::EditComment]),
             Span::raw("Edit comment at cursor"),
         ),

@@ -185,6 +185,8 @@ The title shows the selected comment's position and the total (`Comments · 17/3
 | `c` | Add line comment (or file comment if not on a diff line) |
 | `C` | Add file comment |
 | `<leader>c` | Add review comment |
+| `<leader>S` | Submit review to the forge (PR mode; same as `:submit`) |
+| `<leader>o` | Open the PR in the browser (PR mode; same as `:open-url`) |
 | `v` / `V` | Enter visual mode for range comments |
 | `dd` | Delete comment at cursor; on your own Gerrit draft, asks to confirm and deletes it from Gerrit |
 | `i` | Edit comment at cursor (vim: text cursor at start) |
@@ -303,8 +305,10 @@ In command mode,
 | `:clip` (`:export`) | Copy review to clipboard |
 | `:file <path>` | Write the same review to `<path>`, replacing any file there (`~/` means home) |
 | `:copy-url` | Copy the open PR URL to clipboard (PR mode) |
+| `:open-url` (`:browse`) | Open the PR in the browser (PR mode; also `<leader>o`) |
 | `:summary` | Show all pending local-draft comments; `j`/`k` select, `dd` deletes, and `Enter` jumps |
 | `:diff` | Toggle diff view (unified / side-by-side) |
+| `:branch` | Copy the review's branch name to clipboard (PR/MR head branch, else local branch) |
 | `:theme` | Open the runtime theme picker (live preview; `/` filters, `Enter` keeps it for the session, `Esc` reverts) |
 | `:theme <name>` | Apply `<name>` for this session directly, without opening the picker |
 | `:focus` (`:f`) | Toggle single-file view |
@@ -313,7 +317,7 @@ In command mode,
 | `:commits` (`:targets`) | Select commits to review |
 | `:prs` | Open the review target selector on Pull Requests |
 | `:sessions` (`:reviews`) | Resume a saved review for this checkout |
-| `:submit` | Open submit picker (Comment / Approve / Request changes / Draft) |
+| `:submit` | Open submit picker (Comment / Approve / Request changes / Draft; also `<leader>S`) |
 | `:submit comment` | Submit a Comment review |
 | `:submit approve` | Submit an Approve review |
 | `:submit request-changes` | Submit a Request-changes review |

@@ -129,7 +129,7 @@ and Draft. Inline comments land on their lines; review-level comments become the
 | `r` / `R` | Toggle file / hunk reviewed |
 | `/`, `n` / `N` | Search the diff, next / previous match |
 | `y` | Copy the review to the clipboard |
-| `:submit` | Post the review to the PR's forge |
+| `:submit`, `<leader>S` | Post the review to the PR's forge |
 | `:w`, `:wq`, `:q` | Save, save and quit, quit |
 | `?` | Full help |
 
