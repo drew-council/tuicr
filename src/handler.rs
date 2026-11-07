@@ -9,7 +9,7 @@ use crate::error::TuicrError;
 use crate::forge::remote_comments::PrCommentsVisibility;
 use crate::forge::submit::SubmitEvent;
 use crate::input::{
-    Action, map_file_picker_filter_mode, map_file_tree_mode_with_q_quits,
+    Action, Invocation, map_file_picker_filter_mode, map_file_tree_mode_with_q_quits,
     map_file_tree_prompt_mode, map_global_key, map_key_to_action_with_q_quits,
     map_target_filter_mode, map_theme_picker_filter_mode,
 };
@@ -203,6 +203,60 @@ enum CompletionDirection {
     Reverse,
 }
 
+/// Run an invocation in the active context, applying its count.
+pub fn dispatch_action(app: &mut App, invocation: impl Into<Invocation>) {
+    let (invocation, times) = invocation.into().resolve();
+    // A count repeats the action; the last run takes the invocation itself.
+    for _ in 1..times {
+        dispatch_once(app, invocation.clone());
+    }
+    dispatch_once(app, invocation);
+}
+
+fn dispatch_once(app: &mut App, invocation: Invocation) {
+    if handle_mode_independent_action(app, &invocation) {
+        return;
+    }
+    let action = invocation.action;
+    match app.input_mode {
+        InputMode::Help | InputMode::MessageDetails => handle_help_action(app, action),
+        InputMode::Summary => handle_summary_action(app, action),
+        InputMode::Command => handle_command_action(app, action),
+        InputMode::Search => handle_search_action(app, action),
+        InputMode::Comment => handle_comment_action(app, action),
+        InputMode::Confirm => handle_confirm_action(app, action),
+        InputMode::CommitSelect => handle_commit_select_action(app, action),
+        InputMode::VisualSelect => handle_visual_action(app, action),
+        InputMode::SubmitResolver => handle_submit_resolver_action(app, action),
+        InputMode::SubmitConfirm => handle_submit_confirm_action(app, action),
+        InputMode::SubmitActionPicker => handle_submit_action_picker_action(app, action),
+        InputMode::ThemePicker => handle_theme_picker_action(app, action),
+        InputMode::FilePicker => handle_file_picker_action(app, action),
+        InputMode::Normal => handle_normal_action(app, action),
+    }
+}
+
+/// Handle actions that behave the same in every mode.
+/// Returns `true` when `action` was one of them.
+fn handle_mode_independent_action(app: &mut App, invocation: &Invocation) -> bool {
+    let Invocation { action, count } = invocation;
+    match action {
+        Action::GoToLine | Action::GoToOldLine => {
+            let side = if *action == Action::GoToLine {
+                LineSide::New
+            } else {
+                LineSide::Old
+            };
+            match count {
+                Some(line) => app.go_to_source_line(*line as u32, side),
+                None => app.set_message("Type a line number first, e.g. 42G"),
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
 /// Handle a key that means the same thing in every input mode (see
 /// `map_global_key`). Returns `true` when the key was consumed, so the caller
 /// skips the per-mode maps.
@@ -232,26 +286,6 @@ pub fn map_normal_path_key(app: &App, key: KeyEvent) -> Action {
         map_file_tree_mode_with_q_quits(key, app.leader_key, app.q_quits)
     } else {
         map_key_to_action_with_q_quits(key, app.input_mode, app.leader_key, app.q_quits)
-    }
-}
-
-/// Route an action to the handler for the current input mode.
-pub fn dispatch_action(app: &mut App, action: Action) {
-    match app.input_mode {
-        InputMode::Help | InputMode::MessageDetails => handle_help_action(app, action),
-        InputMode::Summary => handle_summary_action(app, action),
-        InputMode::Command => handle_command_action(app, action),
-        InputMode::Search => handle_search_action(app, action),
-        InputMode::Comment => handle_comment_action(app, action),
-        InputMode::Confirm => handle_confirm_action(app, action),
-        InputMode::CommitSelect => handle_commit_select_action(app, action),
-        InputMode::VisualSelect => handle_visual_action(app, action),
-        InputMode::SubmitResolver => handle_submit_resolver_action(app, action),
-        InputMode::SubmitConfirm => handle_submit_confirm_action(app, action),
-        InputMode::SubmitActionPicker => handle_submit_action_picker_action(app, action),
-        InputMode::ThemePicker => handle_theme_picker_action(app, action),
-        InputMode::FilePicker => handle_file_picker_action(app, action),
-        InputMode::Normal => handle_normal_action(app, action),
     }
 }
 
@@ -336,7 +370,7 @@ pub fn handle_mouse_event(app: &mut App, event: MouseEvent) {
         MouseEventKind::Down(MouseButton::Left) if app.input_mode == InputMode::CommitSelect => {
             if let Some(idx) = app.commit_list_idx_at_screen_row(pos.y) {
                 app.commit_list_cursor = idx;
-                handle_commit_select_action(app, Action::ToggleCommitSelect);
+                handle_commit_select_action(app, Action::ToggleSelect);
             }
         }
         MouseEventKind::Drag(MouseButton::Left)
@@ -468,7 +502,7 @@ fn handle_left_click(app: &mut App, pos: Position) {
     {
         app.focused_panel = FocusedPanel::Diff;
         app.move_cursor_to_annotation(idx);
-        handle_diff_action(app, Action::SelectFile);
+        handle_diff_action(app, Action::Select);
     }
 }
 
@@ -750,7 +784,7 @@ pub fn handle_summary_action(app: &mut App, action: Action) {
         Action::GoToBottom => app.summary_select_last(),
         Action::MouseScrollDown(n) => app.summary_scroll_down(n),
         Action::MouseScrollUp(n) => app.summary_scroll_up(n),
-        Action::SubmitInput => {
+        Action::Select => {
             let selected_target = app
                 .summary_state
                 .targets
@@ -1532,9 +1566,9 @@ pub fn handle_commit_select_action(app: &mut App, action: Action) {
 
 fn handle_sessions_target_action(app: &mut App, action: Action) {
     match action {
-        Action::CommitSelectUp => app.sessions_tab_cursor_up(),
-        Action::CommitSelectDown => app.sessions_tab_cursor_down(),
-        Action::ConfirmCommitSelect => {
+        Action::CursorUp(_) => app.sessions_tab_cursor_up(),
+        Action::CursorDown(_) => app.sessions_tab_cursor_down(),
+        Action::Select => {
             if let Err(e) = app.sessions_tab_select() {
                 app.set_error(format!("Failed to open session: {e}"));
             }
@@ -1546,16 +1580,16 @@ fn handle_sessions_target_action(app: &mut App, action: Action) {
             }
         }
         // Space is a no-op: sessions are picked, not multi-selected.
-        Action::ToggleCommitSelect => {}
+        Action::ToggleSelect => {}
         _ => {}
     }
 }
 
 fn handle_local_target_action(app: &mut App, action: Action) {
     match action {
-        Action::CommitSelectUp => app.commit_select_up(),
-        Action::CommitSelectDown => app.commit_select_down(),
-        Action::ToggleCommitSelect => {
+        Action::CursorUp(_) => app.commit_select_up(),
+        Action::CursorDown(_) => app.commit_select_down(),
+        Action::ToggleSelect => {
             // If on expand row, expand commits instead of toggling selection
             if app.is_on_expand_row() {
                 if let Err(e) = app.expand_commit() {
@@ -1566,7 +1600,7 @@ fn handle_local_target_action(app: &mut App, action: Action) {
                 app.toggle_commit_selection_and_advance();
             }
         }
-        Action::ConfirmCommitSelect => {
+        Action::Select => {
             // if on expand row, expand commit instead of confirming
             if app.is_on_expand_row() {
                 if let Err(e) = app.expand_commit() {
@@ -1582,15 +1616,15 @@ fn handle_local_target_action(app: &mut App, action: Action) {
 
 fn handle_pr_target_action(app: &mut App, action: Action) {
     match action {
-        Action::CommitSelectUp => app.pr_tab_cursor_up(),
-        Action::CommitSelectDown => app.pr_tab_cursor_down(),
-        Action::ConfirmCommitSelect => {
+        Action::CursorUp(_) => app.pr_tab_cursor_up(),
+        Action::CursorDown(_) => app.pr_tab_cursor_down(),
+        Action::Select => {
             app.pr_tab_select();
         }
-        Action::ToggleCommitSelect => {
+        Action::ToggleSelect => {
             // Space is a no-op on the PR tab (spec).
         }
-        Action::BeginTargetFilter => {
+        Action::EnterSearchMode => {
             app.begin_pr_filter();
         }
         Action::TogglePrReviewRequestedFilter => {
@@ -1643,8 +1677,8 @@ pub fn handle_commit_selector_action(app: &mut App, action: Action) {
         }
         // Space toggles + auto-advances so repeated presses sweep a contiguous
         // run; Enter selects only the cursor commit, unselecting the others.
-        Action::ToggleExpand | Action::ToggleCommitSelect | Action::SelectFile => {
-            if action == Action::SelectFile {
+        Action::ToggleExpand | Action::ToggleSelect | Action::Select => {
+            if action == Action::Select {
                 app.select_only_cursor_commit();
             } else {
                 app.toggle_commit_selection_and_advance();
@@ -1681,7 +1715,7 @@ pub fn handle_visual_action(app: &mut App, action: Action) {
                 app.exit_visual_mode();
             }
         }
-        Action::ExportToClipboard => {
+        Action::CopySelection => {
             match app.copy_visual_selection() {
                 Ok((0, _)) => app.set_message("Nothing to copy"),
                 Ok((_, Some(warning))) => app.set_warning(warning),
@@ -1759,7 +1793,7 @@ pub fn handle_file_list_action(app: &mut App, action: Action) {
         Action::FileTreeFilterExclude => app.begin_file_tree_prompt(FileTreePrompt::Exclude),
         Action::FileTreeClearInclude => app.clear_include_filter(),
         Action::FileTreeClearExclude => app.clear_exclude_filter(),
-        Action::FileTreeSearch => app.begin_file_tree_prompt(FileTreePrompt::Search),
+        Action::EnterSearchMode => app.begin_file_tree_prompt(FileTreePrompt::Search),
         // With a tree search active, n/N step file matches. Otherwise they
         // fall through to the diff search so the shared binding still works.
         Action::SearchNext if app.file_tree_search_active() => app.file_tree_search_next(),
@@ -1770,7 +1804,7 @@ pub fn handle_file_list_action(app: &mut App, action: Action) {
         Action::ScrollRight(n) => app.file_list_state.scroll_right(n),
         Action::MouseScrollDown(n) => app.file_list_viewport_scroll_down(n),
         Action::MouseScrollUp(n) => app.file_list_viewport_scroll_up(n),
-        Action::SelectFile | Action::ToggleExpand => {
+        Action::Select | Action::ToggleExpand => {
             if let Some(item) = app.get_selected_tree_item() {
                 match item {
                     FileTreeItem::Directory { path, .. } => app.toggle_directory(&path),
@@ -1830,8 +1864,8 @@ pub fn handle_file_picker_action(app: &mut App, action: Action) {
     match action {
         Action::CursorDown(n) => app.move_file_picker_selection(n as isize),
         Action::CursorUp(n) => app.move_file_picker_selection(-(n as isize)),
-        Action::FilePickerFilter => app.begin_file_picker_filter(),
-        Action::SubmitInput => app.confirm_file_picker(),
+        Action::EnterSearchMode => app.begin_file_picker_filter(),
+        Action::Select => app.confirm_file_picker(),
         Action::ExitMode => app.cancel_file_picker(),
         _ => {}
     }
@@ -1849,8 +1883,8 @@ pub fn handle_theme_picker_action(app: &mut App, action: Action) {
     match action {
         Action::CursorDown(n) => app.move_theme_picker_selection(n as isize),
         Action::CursorUp(n) => app.move_theme_picker_selection(-(n as isize)),
-        Action::ThemePickerFilter => app.begin_theme_picker_filter(),
-        Action::SubmitInput => app.confirm_theme_picker(),
+        Action::EnterSearchMode => app.begin_theme_picker_filter(),
+        Action::Select => app.confirm_theme_picker(),
         Action::ExitMode => app.cancel_theme_picker(),
         Action::Quit => app.should_quit = true,
         _ => {}
@@ -1895,7 +1929,7 @@ pub fn handle_comment_navigator_action(app: &mut App, action: Action) {
         Action::ScrollRight(n) => app.comment_navigator_state.scroll_right(n),
         Action::MouseScrollDown(n) => app.comment_navigator_viewport_scroll_down(n),
         Action::MouseScrollUp(n) => app.comment_navigator_viewport_scroll_up(n),
-        Action::SelectFile => {
+        Action::Select => {
             app.jump_to_selected_comment();
         }
         _ => handle_shared_normal_action(app, action),
@@ -1932,7 +1966,7 @@ pub fn handle_diff_action(app: &mut App, action: Action) {
         Action::ScrollRight(n) => app.scroll_right(n),
         Action::MouseScrollDown(n) => app.scroll_view_down(n),
         Action::MouseScrollUp(n) => app.scroll_view_up(n),
-        Action::SelectFile => {
+        Action::Select => {
             if let Some(hit) = app.get_gap_at_cursor() {
                 match hit {
                     GapCursorHit::Expander(gap_id, dir) => {
@@ -1966,7 +2000,7 @@ pub fn handle_diff_action(app: &mut App, action: Action) {
                 handle_shared_normal_action(app, action);
             }
         }
-        Action::SelectFileFull => {
+        Action::SelectFull => {
             if let Some(hit) = app.get_gap_at_cursor() {
                 match hit {
                     GapCursorHit::Expander(gap_id, _) | GapCursorHit::HiddenLines(gap_id) => {
@@ -2136,9 +2170,9 @@ fn handle_shared_normal_action(app: &mut App, action: Action) {
 /// comment that did not map to an inline GitHub review comment.
 pub fn handle_submit_resolver_action(app: &mut App, action: Action) {
     match action {
-        Action::SubmitResolverDown => app.submit_resolver_cursor_down(),
-        Action::SubmitResolverUp => app.submit_resolver_cursor_up(),
-        Action::SubmitResolverToggle => app.submit_resolver_toggle(),
+        Action::CursorDown(_) => app.submit_resolver_cursor_down(),
+        Action::CursorUp(_) => app.submit_resolver_cursor_up(),
+        Action::Select | Action::ToggleSelect => app.submit_resolver_toggle(),
         Action::SubmitResolverAdvance => app.submit_resolver_advance(),
         Action::ExitMode => app.cancel_submit(),
         Action::Quit => app.should_quit = true,
@@ -2152,9 +2186,9 @@ pub fn handle_submit_resolver_action(app: &mut App, action: Action) {
 /// cancels back to normal.
 pub fn handle_submit_action_picker_action(app: &mut App, action: Action) {
     match action {
-        Action::SubmitPickerDown => app.submit_picker_cursor_down(),
-        Action::SubmitPickerUp => app.submit_picker_cursor_up(),
-        Action::SubmitPickerConfirm => app.submit_picker_confirm(),
+        Action::CursorDown(_) => app.submit_picker_cursor_down(),
+        Action::CursorUp(_) => app.submit_picker_cursor_up(),
+        Action::Select => app.submit_picker_confirm(),
         Action::ExitMode => app.cancel_submit_action_picker(),
         Action::Quit => app.should_quit = true,
         Action::QuitHint => app.set_message(QUIT_HINT_MESSAGE),
