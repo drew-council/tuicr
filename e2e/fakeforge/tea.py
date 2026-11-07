@@ -61,6 +61,9 @@ def handle(f: Fake) -> None:
         p = os.path.join(os.environ["E2E_DATA"], "github", "contents", base[len("/repos/octo/demo/raw/") :])
         if os.path.exists(p):
             reply(f, open(p).read())
+        # A repo without a root `.gitattributes` answers 404, which tuicr reads as "no tags".
+        if base.endswith("/.gitattributes"):
+            reply(f, '{"message":"Not Found"}', "404 Not Found")
     f.record("UNEXPECTED " + ep)
     reply(f, '{"message":"no route"}', "404 Not Found")
 

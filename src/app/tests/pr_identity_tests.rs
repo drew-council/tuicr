@@ -167,6 +167,7 @@ fn should_reattach_session_saved_under_other_host_spelling() {
         commits: Vec::new(),
         review_metadata: Default::default(),
         pr_info: crate::forge::traits::PullRequestInfo::from_details(test_details(&opened_key)),
+        attributes: Default::default(),
     };
     let opened = App::opened_pr_with_persisted_session(opened).unwrap();
     let texts: Vec<_> = opened
@@ -261,6 +262,7 @@ fn should_reresolve_session_path_on_same_head_reload() {
         commits: Vec::new(),
         review_metadata: Default::default(),
         pr_info: crate::forge::traits::PullRequestInfo::from_details(test_details(&key)),
+        attributes: Default::default(),
     });
     assert_eq!(app.session_path.as_deref(), Some(new_path.as_path()));
     assert!(app.dirty);
@@ -330,6 +332,7 @@ fn should_keep_reloaded_pr_session_path_active_before_autosave() {
         commits: Vec::new(),
         review_metadata: Default::default(),
         pr_info: crate::forge::traits::PullRequestInfo::from_details(test_details(&key)),
+        attributes: Default::default(),
     });
     assert_eq!(app.session_path.as_deref(), Some(new_path.as_path()));
     assert!(app.dirty);

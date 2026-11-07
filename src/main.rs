@@ -23,6 +23,7 @@ use tuicr::{config, handler, profile, syntax, ui, update};
 
 /// Timeout for the "press Ctrl+C again to exit" feature
 const CTRL_C_EXIT_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// Hide the file list by default on narrow terminals.
 const MIN_WIDTH_FOR_FILE_LIST: u16 = 100;
 
@@ -378,6 +379,14 @@ fn main() -> anyhow::Result<()> {
         // `:set reviewed!` toggle from here.
         if cfg.show_reviewed == Some(false) {
             app.init_show_reviewed(false);
+        }
+        // Files tagged generated/vendored in `.gitattributes` start hidden;
+        // these opt back in. `:set generated!` / `:set vendored!` toggle.
+        if cfg.show_generated == Some(true) {
+            app.init_show_generated(true);
+        }
+        if cfg.show_vendored == Some(true) {
+            app.init_show_vendored(true);
         }
         // Bot review summaries (Copilot overviews etc.) start hidden;
         // `:set botreviews!` toggles.

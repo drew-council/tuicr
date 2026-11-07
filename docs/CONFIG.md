@@ -36,6 +36,8 @@ show_pr_comments = true
 pr_comments_visibility = "unresolved"
 show_commits = true
 show_reviewed = true
+show_generated = false
+show_vendored = false
 show_bot_reviews = false
 mouse = true
 mouse_scroll_lines = 3
@@ -109,6 +111,8 @@ session_header = true
 | `pr_comments_visibility`   | `unresolved` | Default visibility for PR review comment threads: `unresolved` (default), `all` (resolved/outdated threads shown muted), or `hide`. Seeds each review that starts at the default; `:comments` still switches mid-session and a restored session keeps its saved visibility. |
 | `show_commits`             | `true`       | Whether the inline commit selector pane is visible on startup for multi-commit reviews. Toggle with `<leader>s` or `:set commits!`.                        |
 | `show_reviewed`            | `true`       | Whether files already marked reviewed appear in the file tree and the diff. Set `false` to start a session showing only what is left. Toggle with `:set reviewed!`. |
+| `show_generated`           | `false`      | Whether files tagged `linguist-generated` / `gitlab-generated` in `.gitattributes` appear in the file tree and the diff. Toggle with `:set generated!`. See [.gitattributes](#gitattributes). |
+| `show_vendored`            | `false`      | Whether files tagged `linguist-vendored` in `.gitattributes` appear in the file tree and the diff. Toggle with `:set vendored!`. See [.gitattributes](#gitattributes). |
 | `show_bot_reviews`         | `false`      | Whether PR review summaries written by bots (Copilot overviews, CI integrations) render under Review Comments. Their inline threads are unaffected; `:comments` governs those. Toggle with `:set botreviews!`. |
 | `mouse`                    | `true`       | Wheel scrolling, clicks, and drag-to-select.                                                                                                               |
 | `mouse_scroll_lines`       | `3`          | Lines scrolled per mouse wheel tick in the diff, file list, comment list, help, and summary views; the commit list moves its cursor this many rows. Must be between 1 and 100; other values are ignored with a startup warning. |
@@ -291,6 +295,12 @@ example `toggle-select` in lists and `comment-range` in visual selection.
 | `show-reviewed` | Show reviewed files | `:set reviewed` |
 | `hide-reviewed` | Hide reviewed files | `:set noreviewed` |
 | `toggle-show-reviewed` | Show or hide reviewed files | `:reviewed`, `:set reviewed!` |
+| `show-generated` | Show .gitattributes generated files | `:set generated` |
+| `hide-generated` | Hide .gitattributes generated files | `:set nogenerated` |
+| `toggle-show-generated` | Show or hide .gitattributes generated files | `:generated`, `:set generated!` |
+| `show-vendored` | Show .gitattributes vendored files | `:set vendored` |
+| `hide-vendored` | Hide .gitattributes vendored files | `:set novendored` |
+| `toggle-show-vendored` | Show or hide .gitattributes vendored files | `:vendored`, `:set vendored!` |
 | `show-bot-reviews` | Show bot review summaries | `:set botreviews` |
 | `hide-bot-reviews` | Hide bot review summaries | `:set nobotreviews` |
 | `toggle-show-bot-reviews` | Show or hide bot review summaries | `:botreviews`, `:set botreviews!` |
@@ -578,6 +588,27 @@ dist/
 !Cargo.lock
 ```
 
+## .gitattributes
+
+tuicr also honors the tags GitHub and GitLab use to collapse files in a pull-request diff. Files tagged `linguist-generated` (or `gitlab-generated`) or `linguist-vendored` in `.gitattributes` start hidden from the file tree, the diff, navigation, and the review progress counts. `:set generated` and `:set vendored` reveal them for the session; `show_generated = true` / `show_vendored = true` reveal them on startup. Revealed files carry a `(generated)` / `(vendored)` suffix in the tree.
+
+Unlike `.tuicrignore`, this is a view: the files are still loaded, still hold comments, and can be brought back at any time.
+
+Resolution follows git. The root `.gitattributes`, any nested `.gitattributes` between the root and the file, and the uncommitted `.git/info/attributes` are read; the closest file wins, the last matching line within a file wins, and `-attr`, `!attr`, or `attr=false` unset a tag. Patterns use gitignore syntax without negation, and a pattern that matches a directory does not cover its contents — write `dir/**`. `:e` re-reads the files.
+
+A pull request is tagged by the `.gitattributes` at its head commit, not by the local working tree, which can be on any branch. tuicr reads them from the local clone when it holds that commit, and otherwise asks the forge for the root `.gitattributes` only, so nested files are skipped in that case. The clone's `.git/info/attributes` still applies.
+
+Example:
+
+```gitattributes
+*.lock            linguist-generated
+*.pb.go           linguist-generated
+dist/**           linguist-generated
+third_party/**    linguist-vendored
+src/*.lock        -linguist-generated
+```
+
+In pull-request mode the attributes come from the local checkout of the repository, if there is one.
 ## Compact folders
 
 Set `compact_folders = true` to reduce nesting in the file tree. For example,

@@ -15,11 +15,13 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{Result, TuicrError};
+use crate::forge::attributes::fetch_pr_attributes;
 use crate::forge::join;
 use crate::forge::traits::{
     ForgeBackend, PrSessionKey, PullRequestCommit, PullRequestDetails, PullRequestInfo,
     PullRequestReviewMetadata, PullRequestTarget,
 };
+use crate::gitattributes::AttributesSnapshot;
 use crate::model::{DiffFile, FilePatch, ReviewSession, SessionDiffSource};
 use crate::tuicrignore;
 use crate::vcs::diff_parser::parse_file_patches;
@@ -40,6 +42,15 @@ pub struct OpenedPullRequest {
     pub review_metadata: PullRequestReviewMetadata,
     /// Extended PR metadata for the description panel.
     pub pr_info: PullRequestInfo,
+    /// `.gitattributes` at the PR's head, for tagging generated and vendored
+    /// files. Empty until [`OpenedPullRequest::with_attributes`] supplies it.
+    pub attributes: AttributesSnapshot,
+}
+
+impl OpenedPullRequest {
+    pub fn with_attributes(self, attributes: AttributesSnapshot) -> Self {
+        Self { attributes, ..self }
+    }
 }
 
 /// Send-safe data fetched before the main thread materializes diff hunks.
@@ -49,6 +60,7 @@ pub type PrFetchData = (
     Vec<PullRequestCommit>,
     PullRequestReviewMetadata,
     PullRequestInfo,
+    AttributesSnapshot,
 );
 
 /// Open a PR target through a forge backend and prepare review state.
@@ -61,7 +73,8 @@ pub fn open_pull_request(
     target: PullRequestTarget,
     local_checkout: Option<&Path>,
 ) -> Result<OpenedPullRequest> {
-    let (details, patches, commits, review_metadata, pr_info) = fetch_pr_data(backend, target)?;
+    let (details, patches, commits, review_metadata, pr_info, attributes) =
+        fetch_pr_data(backend, target)?;
     prepare_open_pr(
         details,
         patches,
@@ -70,11 +83,13 @@ pub fn open_pull_request(
         pr_info,
         local_checkout,
     )
+    .map(|opened| opened.with_attributes(attributes))
 }
 
 /// Network-only half of the PR open path: fetch PR metadata, structured file
-/// patches, and the commit list. Safe to run on a background thread
-/// because it does no syntax parsing and holds nothing that isn't `Send`.
+/// patches, the commit list, and the head's `.gitattributes`. Safe to run on
+/// a background thread because it does no syntax parsing and holds nothing
+/// that isn't `Send`.
 ///
 /// The commit list is best-effort: if the forge fails on that endpoint
 /// only, we still return the diff so PR review proceeds without the
@@ -120,8 +135,15 @@ fn fetch_pr_data_once(
         pr_info.details.base_sha = base_sha;
     }
     let details = pr_info.details.clone();
-    let (patches, (commits, review_metadata)) = join(
-        || backend.get_pull_request_diff(&details),
+    let (diff, (commits, review_metadata)) = join(
+        || {
+            // `.gitattributes` lookups depend on the changed paths, so they
+            // follow the diff in its `join` branch.
+            backend.get_pull_request_diff(&details).map(|patches| {
+                let attributes = fetch_pr_attributes(backend, &details, &patches);
+                (patches, attributes)
+            })
+        },
         || {
             join(
                 || backend.list_pull_request_commits(&details),
@@ -129,12 +151,19 @@ fn fetch_pr_data_once(
             )
         },
     );
-    let patches = patches?;
+    let (patches, attributes) = diff?;
     // Best-effort lists degrade to empty, except a pagination-bound refusal:
     // silently showing zero commits would misrepresent the PR.
     let commits = best_effort(commits)?;
     let review_metadata = best_effort(review_metadata)?;
-    Ok((details, patches, commits, review_metadata, pr_info))
+    Ok((
+        details,
+        patches,
+        commits,
+        review_metadata,
+        pr_info,
+        attributes,
+    ))
 }
 
 fn best_effort<T: Default>(result: Result<T>) -> Result<T> {
@@ -193,6 +222,7 @@ pub fn prepare_open_pr(
         commits,
         review_metadata,
         pr_info,
+        attributes: AttributesSnapshot::default(),
     })
 }
 
@@ -399,6 +429,8 @@ index 1111111..2222222 100644
                 "get_pull_request",
                 "resolve_diff_base_sha",
                 "get_pull_request_diff",
+                // No local clone, so the root `.gitattributes` comes from the forge.
+                "fetch_file_content",
                 "get_pull_request"
             ],
         );
@@ -877,7 +909,15 @@ rename to new_name.rs
         let review_metadata = backend
             .list_pull_request_review_metadata(&details)
             .unwrap_or_default();
-        Ok((details, patches, commits, review_metadata, pr_info))
+        let attributes = fetch_pr_attributes(backend, &details, &patches);
+        Ok((
+            details,
+            patches,
+            commits,
+            review_metadata,
+            pr_info,
+            attributes,
+        ))
     }
 
     fn target() -> PullRequestTarget {
@@ -907,7 +947,7 @@ rename to new_name.rs
     #[test]
     fn should_still_degrade_ordinary_commit_failures_to_empty() {
         let backend = SlowBackend::new(0, &["list_pull_request_commits"]);
-        let (_, _, commits, _, _) = fetch_pr_data(&backend, target()).unwrap();
+        let (_, _, commits, _, _, _) = fetch_pr_data(&backend, target()).unwrap();
         assert!(commits.is_empty());
     }
 
@@ -992,7 +1032,8 @@ rename to new_name.rs
             ],
         );
         // when
-        let (_, patches, commits, review_metadata, _) = fetch_pr_data(&backend, target()).unwrap();
+        let (_, patches, commits, review_metadata, _, _) =
+            fetch_pr_data(&backend, target()).unwrap();
         // then — the diff still opens, without the commit selector.
         assert_eq!(patches.len(), 1);
         assert!(commits.is_empty());

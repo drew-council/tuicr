@@ -70,6 +70,9 @@ def handle(f: Fake) -> None:
             p = os.path.join(d, urllib.parse.unquote(mm.group(1)))
             if os.path.exists(p):
                 f.out(open(p).read())
+            # A repo without a root `.gitattributes` answers 404, which tuicr reads as "no tags".
+            if urllib.parse.unquote(mm.group(1)) == ".gitattributes":
+                f.fail("ERROR: 404 Not Found")
         f.unexpected("file/commit lookup " + ep)
     f.unexpected("rest " + ep)
 

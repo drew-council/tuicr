@@ -138,6 +138,12 @@ pub enum Action {
     ShowReviewed,
     HideReviewed,
     ToggleShowReviewed,
+    ShowGenerated,
+    HideGenerated,
+    ToggleShowGenerated,
+    ShowVendored,
+    HideVendored,
+    ToggleShowVendored,
     ShowBotReviews,
     HideBotReviews,
     ToggleShowBotReviews,
@@ -796,6 +802,48 @@ pub const ACTIONS: &[ActionSpec] = &[
         "Show or hide reviewed files",
     )
     .cmd(&["reviewed", "set reviewed!"]),
+    spec(
+        Action::ShowGenerated,
+        "show-generated",
+        Ignore,
+        "Show .gitattributes generated files",
+    )
+    .cmd(&["set generated"]),
+    spec(
+        Action::HideGenerated,
+        "hide-generated",
+        Ignore,
+        "Hide .gitattributes generated files",
+    )
+    .cmd(&["set nogenerated"]),
+    spec(
+        Action::ToggleShowGenerated,
+        "toggle-show-generated",
+        Ignore,
+        "Show or hide .gitattributes generated files",
+    )
+    .cmd(&["generated", "set generated!"]),
+    spec(
+        Action::ShowVendored,
+        "show-vendored",
+        Ignore,
+        "Show .gitattributes vendored files",
+    )
+    .cmd(&["set vendored"]),
+    spec(
+        Action::HideVendored,
+        "hide-vendored",
+        Ignore,
+        "Hide .gitattributes vendored files",
+    )
+    .cmd(&["set novendored"]),
+    spec(
+        Action::ToggleShowVendored,
+        "toggle-show-vendored",
+        Ignore,
+        "Show or hide .gitattributes vendored files",
+    )
+    .cmd(&["vendored", "set vendored!"]),
     spec(
         Action::ShowBotReviews,
         "show-bot-reviews",

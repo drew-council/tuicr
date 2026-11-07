@@ -129,6 +129,12 @@ fn handle_app_action(app: &mut App, invocation: &Invocation) -> bool {
         Action::ShowReviewed => app.set_show_reviewed(true),
         Action::HideReviewed => app.set_show_reviewed(false),
         Action::ToggleShowReviewed => app.toggle_show_reviewed(),
+        Action::ShowGenerated => app.set_show_generated(true),
+        Action::HideGenerated => app.set_show_generated(false),
+        Action::ToggleShowGenerated => app.toggle_show_generated(),
+        Action::ShowVendored => app.set_show_vendored(true),
+        Action::HideVendored => app.set_show_vendored(false),
+        Action::ToggleShowVendored => app.toggle_show_vendored(),
         Action::ShowBotReviews => app.set_show_bot_reviews(true),
         Action::HideBotReviews => app.set_show_bot_reviews(false),
         Action::ToggleShowBotReviews => app.toggle_show_bot_reviews(),
@@ -950,6 +956,9 @@ impl CompletionResult {
 }
 
 fn reload_review(app: &mut App) {
+    // `.gitattributes` may have changed on disk; the path fingerprint alone
+    // would not notice when the file set is unchanged.
+    app.invalidate_file_attributes();
     let comment_reload = app.reload_persisted_session_if_changed(true);
     if matches!(app.diff_source, app::DiffSource::PullRequest(_)) {
         if let Err(e) = comment_reload {
@@ -1947,6 +1956,24 @@ mod command_tests {
         assert_eq!(runs("theme"), Some(Action::ThemePicker.into()));
         assert_eq!(parse_command("theme "), None);
         assert_eq!(parse_command("nope"), None);
+    }
+
+    #[test]
+    fn parses_every_generated_and_vendored_visibility_command_form() {
+        assert_eq!(runs("set generated"), Some(Action::ShowGenerated.into()));
+        assert_eq!(runs("set nogenerated"), Some(Action::HideGenerated.into()));
+        assert_eq!(
+            runs("set generated!"),
+            Some(Action::ToggleShowGenerated.into())
+        );
+        assert_eq!(runs("generated"), Some(Action::ToggleShowGenerated.into()));
+        assert_eq!(runs("set vendored"), Some(Action::ShowVendored.into()));
+        assert_eq!(runs("set novendored"), Some(Action::HideVendored.into()));
+        assert_eq!(
+            runs("set vendored!"),
+            Some(Action::ToggleShowVendored.into())
+        );
+        assert_eq!(runs("vendored"), Some(Action::ToggleShowVendored.into()));
     }
 
     #[test]

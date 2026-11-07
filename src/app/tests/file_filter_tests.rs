@@ -5,6 +5,7 @@ use crate::vcs::traits::{VcsBackend, VcsInfo, VcsType};
 use std::path::PathBuf;
 
 struct StubVcs(VcsInfo);
+
 impl VcsBackend for StubVcs {
     fn info(&self) -> &VcsInfo {
         &self.0
@@ -833,4 +834,272 @@ fn should_not_count_reviewed_session_files_outside_the_diff() {
 
     assert_eq!(app.reviewed_count(), 1);
     assert_eq!(app.file_count(), 1);
+}
+// ---- .gitattributes generated / vendored files ---------------------------
+
+/// Point the app at a temp repo root carrying `contents` as its
+/// `.gitattributes`, then re-derive the tags the way a diff load would.
+fn with_gitattributes(app: &mut App, contents: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join(".gitattributes"), contents).expect("write .gitattributes");
+    app.local_repo_root = Some(dir.path().to_path_buf());
+    app.invalidate_file_attributes();
+    app.rebuild_annotations();
+    dir
+}
+
+#[test]
+fn should_hide_generated_and_vendored_files_by_default() {
+    let mut app = app_with(&["Cargo.lock", "vendor/lib.js", "src/main.rs"]);
+    let _dir = with_gitattributes(
+        &mut app,
+        "*.lock linguist-generated\nvendor/** linguist-vendored\n",
+    );
+
+    assert!(!app.show_generated());
+    assert!(!app.show_vendored());
+    assert_eq!(visible_paths(&app), vec!["src/main.rs"]);
+    assert_eq!(app.hidden_attribute_counts(), (1, 1));
+}
+
+#[test]
+fn should_reveal_generated_files_independently_of_vendored_ones() {
+    let mut app = app_with(&["Cargo.lock", "vendor/lib.js", "src/main.rs"]);
+    let _dir = with_gitattributes(
+        &mut app,
+        "*.lock linguist-generated\nvendor/** linguist-vendored\n",
+    );
+
+    app.toggle_show_generated();
+
+    assert_eq!(visible_paths(&app), vec!["Cargo.lock", "src/main.rs"]);
+    assert_eq!(app.hidden_attribute_counts(), (0, 1));
+
+    app.toggle_show_vendored();
+
+    assert_eq!(
+        visible_paths(&app),
+        vec!["Cargo.lock", "src/main.rs", "vendor/lib.js"]
+    );
+    assert_eq!(app.hidden_attribute_counts(), (0, 0));
+}
+
+#[test]
+fn should_keep_hidden_tagged_files_out_of_the_progress_fraction() {
+    // Unlike hidden reviewed files, a hidden lockfile is not something the
+    // reviewer is working through, so it must not pad the denominator.
+    let mut app = app_with(&["Cargo.lock", "src/main.rs"]);
+    let _dir = with_gitattributes(&mut app, "*.lock linguist-generated\n");
+    mark_reviewed(&mut app, "src/main.rs");
+
+    assert_eq!((app.reviewed_count(), app.file_count()), (1, 1));
+
+    app.set_show_generated(true);
+
+    assert_eq!((app.reviewed_count(), app.file_count()), (1, 2));
+}
+
+#[test]
+fn should_label_revealed_tagged_files() {
+    let mut app = app_with(&["Cargo.lock", "vendor/lib.js", "src/main.rs"]);
+    let _dir = with_gitattributes(
+        &mut app,
+        "*.lock linguist-generated\nvendor/** linguist-vendored\n",
+    );
+
+    let lock = index_of(&app, "Cargo.lock");
+    let vendored = index_of(&app, "vendor/lib.js");
+    let main = index_of(&app, "src/main.rs");
+    assert_eq!(
+        app.file_attribute_label(&app.diff_files[lock]),
+        Some("generated")
+    );
+    assert_eq!(
+        app.file_attribute_label(&app.diff_files[vendored]),
+        Some("vendored")
+    );
+    assert_eq!(app.file_attribute_label(&app.diff_files[main]), None);
+}
+
+#[test]
+fn should_drive_tag_visibility_from_the_set_commands() {
+    let mut app = app_with(&["Cargo.lock", "vendor/lib.js", "src/main.rs"]);
+    let _dir = with_gitattributes(
+        &mut app,
+        "*.lock linguist-generated\nvendor/** linguist-vendored\n",
+    );
+
+    run_command(&mut app, "set generated");
+    assert_eq!(visible_paths(&app), vec!["Cargo.lock", "src/main.rs"]);
+
+    run_command(&mut app, "set nogenerated");
+    assert_eq!(visible_paths(&app), vec!["src/main.rs"]);
+
+    run_command(&mut app, "vendored");
+    assert_eq!(visible_paths(&app), vec!["src/main.rs", "vendor/lib.js"]);
+
+    run_command(&mut app, "set vendored!");
+    assert_eq!(visible_paths(&app), vec!["src/main.rs"]);
+}
+
+#[test]
+fn should_apply_the_config_default_without_a_status_message() {
+    let mut app = app_with(&["Cargo.lock", "src/main.rs"]);
+    let _dir = with_gitattributes(&mut app, "*.lock linguist-generated\n");
+    app.message = None;
+
+    app.init_show_generated(true);
+
+    assert_eq!(visible_paths(&app), vec!["Cargo.lock", "src/main.rs"]);
+    assert!(app.message.is_none(), "startup defaults should stay silent");
+}
+
+#[test]
+fn should_reread_gitattributes_after_invalidation() {
+    let mut app = app_with(&["Cargo.lock", "src/main.rs"]);
+    let dir = with_gitattributes(&mut app, "*.lock linguist-generated\n");
+    assert_eq!(visible_paths(&app), vec!["src/main.rs"]);
+
+    // Same file set, so a plain rebuild keeps the cached tags...
+    std::fs::write(dir.path().join(".gitattributes"), "").expect("rewrite");
+    app.rebuild_annotations();
+    assert_eq!(visible_paths(&app), vec!["src/main.rs"]);
+
+    // ...and `:e` forces the re-read.
+    app.invalidate_file_attributes();
+    app.rebuild_annotations();
+    assert_eq!(visible_paths(&app), vec!["Cargo.lock", "src/main.rs"]);
+}
+
+#[test]
+fn should_pick_up_tags_when_the_file_set_changes() {
+    let mut app = app_with(&["src/main.rs"]);
+    let _dir = with_gitattributes(&mut app, "*.lock linguist-generated\n");
+    assert_eq!(app.hidden_attribute_counts(), (0, 0));
+
+    // A reload that brings in a tagged file must classify it without any
+    // explicit invalidation, since load paths only call `rebuild_annotations`.
+    app.diff_files.push(file("Cargo.lock"));
+    app.session.add_diff_file(app.diff_files.last().unwrap());
+    app.rebuild_annotations();
+
+    assert_eq!(app.hidden_attribute_counts(), (1, 0));
+    assert_eq!(visible_paths(&app), vec!["src/main.rs"]);
+}
+
+/// A PR-mode app as `App::build` leaves it: the synthetic `forge:` root means
+/// no `local_repo_root`, and `build` has already cached tags without one.
+fn pr_app_with(paths: &[&str]) -> App {
+    use crate::forge::traits::{ForgeRepository, PrSessionKey};
+
+    let pr = PullRequestDiffSource {
+        key: PrSessionKey::new(
+            ForgeRepository::github("github.com", "owner", "repo"),
+            42,
+            "head",
+        ),
+        base_sha: "base".to_string(),
+        title: "PR".to_string(),
+        url: "https://github.com/owner/repo/pull/42".to_string(),
+        head_ref_name: "feature".to_string(),
+        base_ref_name: "main".to_string(),
+        state: "OPEN".to_string(),
+        closed: false,
+        merged: false,
+    };
+    let vcs_info = VcsInfo {
+        root_path: PathBuf::from("forge:github.com/owner/repo"),
+        head_commit: pr.key.head_sha.clone(),
+        branch_name: Some(pr.head_ref_name.clone()),
+        vcs_type: VcsType::File,
+    };
+    let mut session = ReviewSession::new(
+        vcs_info.root_path.clone(),
+        vcs_info.head_commit.clone(),
+        vcs_info.branch_name.clone(),
+        SessionDiffSource::PullRequest,
+    );
+    session.pr_session_key = Some(pr.key.clone());
+    let mut app = App::build(
+        Box::new(StubVcs(vcs_info.clone())),
+        vcs_info,
+        crate::theme::Theme::dark(),
+        None,
+        false,
+        paths.iter().map(|p| file(p)).collect(),
+        session,
+        DiffSource::PullRequest(Box::new(pr)),
+        InputMode::Normal,
+        Vec::new(),
+        None,
+        None,
+    )
+    .expect("build pr app");
+    app.expand_all_dirs();
+    app
+}
+
+fn head_attributes(contents: &str) -> crate::gitattributes::AttributesSnapshot {
+    crate::gitattributes::AttributesSnapshot {
+        files: HashMap::from([(PathBuf::new(), contents.to_string())]),
+        info: None,
+    }
+}
+
+#[test]
+fn should_tag_pr_files_from_the_head_not_the_launch_directory() {
+    // given a PR app launched from a checkout whose own branch tags `*.rs`
+    let mut app = pr_app_with(&["api/foo.pb.go", "src/main.rs"]);
+    let _dir = with_gitattributes(&mut app, "*.rs linguist-generated\n");
+    assert_eq!(app.hidden_attribute_counts(), (0, 0));
+
+    // when the PR head's attributes arrive
+    app.set_pr_attributes(head_attributes("*.pb.go linguist-generated\n"));
+    app.rebuild_annotations();
+
+    // then the head decides, and the launch directory is not consulted
+    assert_eq!(app.hidden_attribute_counts(), (1, 0));
+    assert_eq!(visible_paths(&app), vec!["src/main.rs"]);
+}
+
+#[test]
+fn should_reread_the_working_tree_when_leaving_pr_mode_for_the_same_files() {
+    let mut app = pr_app_with(&["api/foo.pb.go", "src/main.rs"]);
+    let _dir = with_gitattributes(&mut app, "*.rs linguist-generated\n");
+    app.set_pr_attributes(head_attributes("*.pb.go linguist-generated\n"));
+    app.rebuild_annotations();
+
+    app.diff_source = DiffSource::WorkingTree;
+    app.rebuild_annotations();
+
+    assert_eq!(visible_paths(&app), vec!["api/foo.pb.go"]);
+}
+
+#[test]
+fn should_leave_files_alone_without_a_local_repo_root() {
+    let mut app = app_with(&["Cargo.lock", "src/main.rs"]);
+    app.local_repo_root = None;
+    app.invalidate_file_attributes();
+    app.rebuild_annotations();
+
+    assert!(!app.attribute_hiding_active());
+    assert_eq!(visible_paths(&app), vec!["Cargo.lock", "src/main.rs"]);
+}
+
+#[test]
+fn should_explain_when_no_files_carry_the_tag() {
+    let mut app = app_with(&["src/main.rs"]);
+    let _dir = with_gitattributes(&mut app, "*.lock linguist-generated\n");
+
+    app.toggle_show_generated();
+
+    let message = app
+        .message
+        .as_ref()
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
+    assert!(
+        message.contains("No generated files"),
+        "expected a no-op explanation, got: {message}"
+    );
 }

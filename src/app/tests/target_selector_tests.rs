@@ -362,6 +362,8 @@ struct FakeForgeBackend {
     review_metadata: PullRequestReviewMetadata,
     range_patch: Option<String>,
     line_count_requests: std::sync::Arc<std::sync::Mutex<Vec<PathBuf>>>,
+    /// Root `.gitattributes` at the PR head; `None` answers like a 404.
+    root_attributes: Option<String>,
 }
 
 impl FakeForgeBackend {
@@ -373,6 +375,7 @@ impl FakeForgeBackend {
             review_metadata: PullRequestReviewMetadata::default(),
             range_patch: None,
             line_count_requests: Default::default(),
+            root_attributes: None,
         }
     }
 }
@@ -440,6 +443,16 @@ impl crate::forge::traits::ForgeBackend for FakeForgeBackend {
         _request: crate::forge::traits::CreateReviewRequest<'_>,
     ) -> Result<crate::forge::traits::GhCreateReviewResponse> {
         unimplemented!("FakeForgeBackend does not implement create_review")
+    }
+    fn fetch_file_content(
+        &self,
+        request: crate::forge::traits::ForgeFileLinesRequest,
+    ) -> Result<String> {
+        let at_head = request.sha() == self.details.head_sha;
+        match (&self.root_attributes, request.path.to_str()) {
+            (Some(contents), Some(".gitattributes")) if at_head => Ok(contents.clone()),
+            _ => Err(TuicrError::Forge("404 Not Found".to_string())),
+        }
     }
 }
 
@@ -938,11 +951,14 @@ fn should_show_single_pr_commit_message_on_open_and_same_head_reload() {
 
     // when the same head is refreshed
     app.finish_pr_reload(
-        details.clone(),
-        structured_patch(patch),
-        vec![commit],
-        PullRequestReviewMetadata::default(),
-        crate::forge::traits::PullRequestInfo::from_details(details),
+        (
+            details.clone(),
+            structured_patch(patch),
+            vec![commit],
+            PullRequestReviewMetadata::default(),
+            crate::forge::traits::PullRequestInfo::from_details(details),
+            crate::gitattributes::AttributesSnapshot::default(),
+        ),
         &request,
     )
     .unwrap();
@@ -1068,11 +1084,14 @@ fn should_keep_selected_pr_diff_on_same_head_reload_and_refresh_cumulative_cache
 
     // when a same-head reload delivers the cumulative PR diff
     app.finish_pr_reload(
-        details.clone(),
-        structured_patch(&reload_patch),
-        commits,
-        PullRequestReviewMetadata::default(),
-        crate::forge::traits::PullRequestInfo::from_details(details),
+        (
+            details.clone(),
+            structured_patch(&reload_patch),
+            commits,
+            PullRequestReviewMetadata::default(),
+            crate::forge::traits::PullRequestInfo::from_details(details),
+            crate::gitattributes::AttributesSnapshot::default(),
+        ),
         &request,
     )
     .unwrap();
@@ -1151,11 +1170,14 @@ fn should_refresh_the_cumulative_cache_on_an_unchanged_identity_reload() {
         restore_overview_cursor: None,
     };
     app.finish_pr_reload(
-        details.clone(),
-        structured_patch(&reload_patch),
-        commits,
-        PullRequestReviewMetadata::default(),
-        crate::forge::traits::PullRequestInfo::from_details(details.clone()),
+        (
+            details.clone(),
+            structured_patch(&reload_patch),
+            commits,
+            PullRequestReviewMetadata::default(),
+            crate::forge::traits::PullRequestInfo::from_details(details.clone()),
+            crate::gitattributes::AttributesSnapshot::default(),
+        ),
         &request,
     )
     .unwrap();
@@ -2358,11 +2380,14 @@ fn should_carry_reviewed_state_through_finish_pr_reload_when_head_advances() {
     let mut details_b = details_a.clone();
     details_b.head_sha = "bbbbbbbbbbbbbbbb".to_string();
     app.finish_pr_reload(
-        details_b.clone(),
-        structured_patch(&two_file_patch("newer changed")),
-        Vec::new(),
-        PullRequestReviewMetadata::default(),
-        crate::forge::traits::PullRequestInfo::from_details(details_b),
+        (
+            details_b.clone(),
+            structured_patch(&two_file_patch("newer changed")),
+            Vec::new(),
+            PullRequestReviewMetadata::default(),
+            crate::forge::traits::PullRequestInfo::from_details(details_b),
+            crate::gitattributes::AttributesSnapshot::default(),
+        ),
         &request,
     )
     .unwrap();
@@ -2409,11 +2434,14 @@ fn should_keep_reviewed_state_through_finish_pr_reload_when_head_unchanged() {
     details.base_sha = "retargeted-base".to_string();
     // when the async reload finish path refreshes the same head
     app.finish_pr_reload(
-        details.clone(),
-        structured_patch(&two_file_patch("new changed")),
-        Vec::new(),
-        PullRequestReviewMetadata::default(),
-        crate::forge::traits::PullRequestInfo::from_details(details),
+        (
+            details.clone(),
+            structured_patch(&two_file_patch("new changed")),
+            Vec::new(),
+            PullRequestReviewMetadata::default(),
+            crate::forge::traits::PullRequestInfo::from_details(details),
+            crate::gitattributes::AttributesSnapshot::default(),
+        ),
         &request,
     )
     .unwrap();
@@ -2425,6 +2453,83 @@ fn should_keep_reviewed_state_through_finish_pr_reload_when_head_unchanged() {
         panic!("expected PR");
     };
     assert_eq!(pr.base_sha, "retargeted-base");
+}
+
+/// Display paths of the files the tree currently shows.
+fn shown_paths(app: &App) -> Vec<PathBuf> {
+    app.diff_files
+        .iter()
+        .filter(|file| app.file_passes_filter(file))
+        .map(|file| file.display_path().clone())
+        .collect()
+}
+
+#[test]
+fn should_tag_pr_files_from_the_pr_head_attributes() {
+    // given a launch checkout whose own branch tags every `.rs` file
+    let _reviews = TestReviewsDir::new();
+    let launch = tempfile::tempdir().unwrap();
+    std::fs::write(
+        launch.path().join(".gitattributes"),
+        "*.rs linguist-generated\n",
+    )
+    .unwrap();
+    let mut app = build_app();
+    app.local_repo_root = Some(launch.path().to_path_buf());
+
+    // when a PR whose head tags only `stable.rs` is opened
+    let details = test_pr_details(4242, "attrs");
+    let mut backend = FakeForgeBackend::open_pr_details(details, two_file_patch("new changed"));
+    backend.root_attributes = Some("stable.rs linguist-generated\n".to_string());
+    app.open_pr_with_backend(&sample_pr(4242, "attrs"), Box::new(backend), None)
+        .unwrap();
+
+    // then the head's attributes decide, not the launch directory's
+    assert_eq!(app.hidden_attribute_counts(), (1, 0));
+    assert_eq!(shown_paths(&app), vec![PathBuf::from("src/changed.rs")]);
+}
+
+#[test]
+fn should_retag_pr_files_when_a_same_head_reload_brings_new_attributes() {
+    // given an open PR with no attributes at its head
+    let _reviews = TestReviewsDir::new();
+    let mut app = build_app();
+    let details = test_pr_details(4243, "attrs-reload");
+    let backend = FakeForgeBackend::open_pr_details(details.clone(), two_file_patch("new changed"));
+    app.open_pr_with_backend(&sample_pr(4243, "attrs-reload"), Box::new(backend), None)
+        .unwrap();
+    assert_eq!(app.hidden_attribute_counts(), (0, 0));
+    let request = PrReloadRequest {
+        repository: details.repository.clone(),
+        pr_number: details.number,
+        head_sha: details.head_sha.clone(),
+        started_at: Instant::now(),
+        anchor: None,
+        restore_overview_cursor: None,
+    };
+
+    // when a reload of the same head and file set returns attributes
+    app.finish_pr_reload(
+        (
+            details.clone(),
+            structured_patch(&two_file_patch("new changed")),
+            Vec::new(),
+            PullRequestReviewMetadata::default(),
+            crate::forge::traits::PullRequestInfo::from_details(details),
+            crate::gitattributes::AttributesSnapshot {
+                files: HashMap::from([(
+                    PathBuf::new(),
+                    "changed.rs linguist-generated\n".to_string(),
+                )]),
+                info: None,
+            },
+        ),
+        &request,
+    )
+    .unwrap();
+
+    // then the unchanged file set is still re-tagged
+    assert_eq!(shown_paths(&app), vec![PathBuf::from("src/stable.rs")]);
 }
 
 #[test]
@@ -3265,6 +3370,7 @@ fn configured_comments_visibility_seeds_the_async_pr_open_path() {
             Vec::new(),
             crate::forge::traits::PullRequestReviewMetadata::default(),
             crate::forge::traits::PullRequestInfo::from_details(details.clone()),
+            crate::gitattributes::AttributesSnapshot::default(),
         )),
     })
     .unwrap();
@@ -3487,6 +3593,7 @@ fn pr_open_landing_mid_delete_prompt_drops_the_prompt() {
             Vec::new(),
             crate::forge::traits::PullRequestReviewMetadata::default(),
             crate::forge::traits::PullRequestInfo::from_details(details.clone()),
+            crate::gitattributes::AttributesSnapshot::default(),
         )),
     })
     .unwrap();
@@ -3739,11 +3846,14 @@ fn same_head_reload(
         restore_overview_cursor: None,
     };
     app.finish_pr_reload(
-        details.clone(),
-        structured_patch(two_hunk_patch()),
-        commits,
-        metadata,
-        crate::forge::traits::PullRequestInfo::from_details(details),
+        (
+            details.clone(),
+            structured_patch(two_hunk_patch()),
+            commits,
+            metadata,
+            crate::forge::traits::PullRequestInfo::from_details(details),
+            crate::gitattributes::AttributesSnapshot::default(),
+        ),
         &request,
     )
     .unwrap();
@@ -4148,11 +4258,14 @@ fn same_head_reload_new_head(
         restore_overview_cursor: None,
     };
     app.finish_pr_reload(
-        new.clone(),
-        structured_patch(crate::forge::github::gh::tests_fixture::SIMPLE_PATCH),
-        vec![commit_a.clone(), commit_b],
-        PullRequestReviewMetadata::default(),
-        crate::forge::traits::PullRequestInfo::from_details(new.clone()),
+        (
+            new.clone(),
+            structured_patch(crate::forge::github::gh::tests_fixture::SIMPLE_PATCH),
+            vec![commit_a.clone(), commit_b],
+            PullRequestReviewMetadata::default(),
+            crate::forge::traits::PullRequestInfo::from_details(new.clone()),
+            crate::gitattributes::AttributesSnapshot::default(),
+        ),
         &request,
     )
     .unwrap();

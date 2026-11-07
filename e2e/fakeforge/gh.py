@@ -177,5 +177,10 @@ def rest(f: Fake, endpoint: str) -> None:
             f.serve(rel)
         f.serve("pr_diff.patch" if diff_req else "compare.json")
     if base.startswith("contents/"):
-        f.serve("contents/" + fixture_name(urllib.parse.unquote(base[len("contents/") :])))
+        name = urllib.parse.unquote(base[len("contents/") :])
+        rel = "contents/" + fixture_name(name)
+        # A repo without a root `.gitattributes` answers 404, which tuicr reads as "no tags".
+        if name == ".gitattributes" and not f.has(rel):
+            f.fail("gh: Not Found (HTTP 404)")
+        f.serve(rel)
     f.unexpected("unrecognised REST endpoint " + path)

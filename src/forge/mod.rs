@@ -4,6 +4,7 @@
 //! slice. UI and review submission code should depend on the trait shape here
 //! instead of shelling out to forge-specific tools directly.
 
+pub mod attributes;
 pub mod azure;
 pub mod bitbucket;
 pub mod canonical;
