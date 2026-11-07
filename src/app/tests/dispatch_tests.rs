@@ -181,3 +181,53 @@ fn should_drop_the_count_for_actions_that_ignore_it() {
         manual.diff_state.cursor_line
     );
 }
+
+#[test]
+fn should_quit_a_clean_session() {
+    let mut app = three_files();
+
+    dispatch_action(&mut app, Action::Quit);
+
+    assert!(app.should_quit);
+}
+
+#[test]
+fn should_force_quit_a_dirty_session() {
+    let mut app = three_files();
+    app.dirty = true;
+
+    dispatch_action(&mut app, Action::ForceQuit);
+
+    assert!(app.should_quit);
+}
+
+#[test]
+fn should_run_the_same_action_for_a_command_and_a_key() {
+    let mut by_command = three_files();
+    by_command.enter_command_mode();
+    by_command.command_buffer = "set relativenumber!".into();
+    crate::handler::handle_command_action(&mut by_command, Action::SubmitInput);
+
+    let mut by_key = three_files();
+    dispatch_action(&mut by_key, Action::ToggleRelativeNumber);
+
+    assert_eq!(by_command.input_mode, InputMode::Normal);
+    assert!(by_command.relative_line_numbers);
+    assert!(by_key.relative_line_numbers);
+}
+
+#[test]
+fn should_run_a_line_number_command_as_a_counted_jump() {
+    let mut by_command = three_files();
+    by_command.enter_command_mode();
+    by_command.command_buffer = "12".into();
+    crate::handler::handle_command_action(&mut by_command, Action::SubmitInput);
+
+    let mut by_key = three_files();
+    dispatch_action(&mut by_key, Invocation::new(Action::GoToBottom, Some(12)));
+
+    assert_eq!(
+        by_command.diff_state.cursor_line,
+        by_key.diff_state.cursor_line
+    );
+}

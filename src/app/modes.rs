@@ -154,8 +154,13 @@ impl App {
         self.help_state.scroll_offset = max_offset;
     }
 
+    pub fn take_render_before_input(&mut self) -> bool {
+        std::mem::take(&mut self.render_before_input)
+    }
+
     pub fn enter_summary_mode(&mut self) {
         self.input_mode = InputMode::Summary;
+        self.render_before_input = true;
         self.summary_state.selected_comment = 0;
         self.summary_state.scroll_offset = 0;
         self.summary_state.comment_ranges.clear();

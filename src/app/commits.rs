@@ -632,7 +632,10 @@ impl App {
     /// Toggle the inline commit selector's visibility. When hiding it while it
     /// is focused, move focus back to the diff so input keeps flowing.
     pub fn toggle_commit_selector(&mut self) {
-        let visible = !self.show_commit_selector;
+        self.set_commit_selector_visible(!self.show_commit_selector);
+    }
+
+    pub fn set_commit_selector_visible(&mut self, visible: bool) {
         self.show_commit_selector = visible;
         if !visible && self.focused_panel == FocusedPanel::CommitSelector {
             self.focused_panel = FocusedPanel::Diff;

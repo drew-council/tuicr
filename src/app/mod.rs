@@ -1388,7 +1388,9 @@ pub struct App {
     /// of only the ones that changed since the last frame.
     full_redraw_pending: bool,
     pub dirty: bool,
-    pub quit_warned: bool,
+    /// Set when the next queued key must wait for a render, because that
+    /// render fills state the key reads (summary comment identities).
+    pub render_before_input: bool,
     pub message: Option<Message>,
     pub pending_confirm: Option<ConfirmAction>,
     pub supports_keyboard_enhancement: bool,

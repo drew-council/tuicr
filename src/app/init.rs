@@ -571,7 +571,7 @@ impl App {
             should_quit: false,
             full_redraw_pending: false,
             dirty: false,
-            quit_warned: false,
+            render_before_input: false,
             message: None,
             pending_confirm: None,
             supports_keyboard_enhancement: false,

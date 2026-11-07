@@ -277,7 +277,7 @@ In command mode,
 | `:comments unresolved` | Show unresolved remote comments (PR mode, default) |
 | `:comments all` | Show all remote comments including resolved and outdated |
 | `:comments hide` | Hide remote comments in PR mode |
-| `:set wrap` | Enable line wrap in diff view |
+| `:set wrap` / `:set nowrap` | Enable / disable line wrap in diff view |
 | `:set wrap!` (`:wrap`) | Toggle line wrap in diff view |
 | `:set relativenumber` / `:set norelativenumber` | Enable / disable relative rendered-row numbers |
 | `:set relativenumber!` | Toggle relative rendered-row numbers |
@@ -296,12 +296,12 @@ In command mode,
 | `:q` (`:quit`) | Quit (warns on unsaved comments; discards review-only state unless the saved session holds comments, e.g. added by `tuicr review add`) |
 | `:q!` (`:quit!`) | Force quit |
 | `:x` / `:wq` | Save and quit (prompts to copy if comments exist) |
-| `ZZ` | Save and quit (stays open and reports the error if the save fails, like `:wq`) |
-| `ZQ` | Quit without saving |
+| `ZZ` | Same as `:x` |
+| `ZQ` | Same as `:q!` |
 | `?` | Toggle help |
 
 Pressing bare `q` no longer quits by default; it prints a reminder to use `:q` instead. Set
-`q_quits = true` to restore `q` as a quit key in review modes.
+`q_quits = true` to restore `q` as a quit key in review modes. It behaves like `:q`.
 
 The summary replaces the diff while leaving the file sidebar visible when it is open. The first
 pending comment is selected when the summary opens. Use `j`/`k` to select the next

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# `ZZ` saves the unsaved reviewed mark, copies the review and quits; `ZQ` quits without copying and without saving it.
+# `ZZ` saves the unsaved reviewed mark and, like `:x`, asks before copying the review and quitting; `ZQ` quits without
+# copying and without saving it.
 from e2e import Scenario, repos, scenario
 
 
@@ -17,6 +18,8 @@ def main(s: Scenario) -> None:
         tui.keys(f"note for {k}").keys("Enter").wait_for(f"note for {k}")
         tui.keys("r").wait_for("Files · 1/8")  # the comment autosaved; the mark is the unsaved part
         tui.keys(k)
+        if k == "ZZ":
+            tui.wait_for(r"Copy review to clipboard\?").keys("y")
         tui.wait_exit()
         if k == "ZZ":
             assert s.session_has('"reviewed": true', name), "ZZ did not save the reviewed mark"
