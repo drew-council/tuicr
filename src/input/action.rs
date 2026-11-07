@@ -252,8 +252,9 @@ actions! {
         OpenSessions => "open-sessions", Ignore, "Open the review target selector on Sessions", ["sessions", "reviews"];
         TargetSelectorTabNext => "next-tab", Ignore, "Next tab";
         TargetSelectorTabPrev => "prev-tab", Ignore, "Previous tab";
-        /// Toggle PR tab between all open PRs and PRs awaiting your review.
-        TogglePrReviewRequestedFilter => "toggle-review-requested", Ignore, "Toggle PRs awaiting your review";
+        /// Cycle the PR tab scope: all open PRs, review requested, requested by
+        /// name (GitHub).
+        TogglePrReviewRequestedFilter => "toggle-review-requested", Ignore, "Cycle the PR scope: all, review requested, requested by name";
         /// Sessions tab: show or hide sessions holding no review progress.
         SessionsTabToggleShowEmpty => "toggle-empty-sessions", Ignore, "Show or hide empty sessions";
         /// Sessions tab: delete the session under the cursor, after a confirm.
@@ -419,6 +420,24 @@ mod tests {
             Some(Action::ToggleShowReviewed)
         );
         assert_eq!(Action::from_command("nope"), None);
+    }
+
+    #[test]
+    fn should_document_every_action_in_the_config_reference() {
+        let docs = include_str!("../../docs/CONFIG.md");
+        for spec in ACTIONS {
+            let commands: Vec<String> = spec.commands.iter().map(|c| format!("`:{c}`")).collect();
+            let row = format!(
+                "| `{}` | {} | {} |",
+                spec.name,
+                spec.help,
+                commands.join(", ")
+            );
+            assert!(
+                docs.contains(&row),
+                "docs/CONFIG.md is missing the row {row}"
+            );
+        }
     }
 
     #[test]

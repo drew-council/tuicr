@@ -132,7 +132,8 @@ and Draft. Inline comments land on their lines; review-level comments become the
 | `:w`, `:wq`, `:q` | Save, save and quit, quit |
 | `?` | Full help |
 
-Every key and `:` command: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md).
+Every key and `:` command: [docs/KEYBINDINGS.md](docs/KEYBINDINGS.md). Rebind any of them under
+[`[keys]`](docs/CONFIG.md#keys).
 
 ## Configuration
 
@@ -143,6 +144,9 @@ theme = "catppuccin-mocha"   # 24 bundled themes, or your own
 diff_view = "side-by-side"   # or "unified"
 editor = "nvim"              # for `e` / `:edit`; overrides $EDITOR
 leader = ";"                 # prefix for leader shortcuts
+
+[keys.normal]                # rebind any key; see docs/CONFIG.md#keys
+"<C-s>" = "submit"
 
 [[comment_types]]            # optional; reviews are untyped by default
 id = "issue"
