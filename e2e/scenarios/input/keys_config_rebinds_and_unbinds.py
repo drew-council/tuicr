@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # config.toml `[keys.<context>]`: a key or `<leader>` sequence bound to an action runs it, `"none"` removes a default
-# binding, and a binding that displaces a longer default warns at startup.
+# binding, the help screen lists the configured key, and a binding that displaces a longer default warns at startup.
 from e2e import Scenario, repos, scenario
 
 CONFIG = """\
@@ -28,5 +28,7 @@ def main(s: Scenario) -> None:
     tui.keys(";x").wait_for("Files · 0/8")
     tui.reject(HELP)
     tui.keys("x").wait_for(HELP)  # the configured key opens help
+    tui.keys("/").keys("file list visibility").keys("Enter")
+    tui.wait_for(r";x\s+Toggle file list visibility")  # help reads its keys from the keymap
     tui.keys("Escape").wait_gone(HELP)
     tui.quit()

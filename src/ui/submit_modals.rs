@@ -120,8 +120,20 @@ pub fn render_submit_resolver(frame: &mut Frame, app: &App) {
     list_state.select(Some(state.resolver_cursor.min(n.saturating_sub(1))));
     frame.render_stateful_widget(list, list_area, &mut list_state);
 
+    let key = |action| {
+        app.keymap.label(
+            crate::input::KeyContext::SubmitResolver,
+            &[action],
+            app.leader_key,
+        )
+    };
     let footer = Paragraph::new(Line::from(Span::styled(
-        "Enter: toggle action   s: submit   Esc: cancel",
+        format!(
+            "{}: toggle action   {}: submit   {}: cancel",
+            key(crate::input::Action::Select),
+            key(crate::input::Action::SubmitResolverAdvance),
+            key(crate::input::Action::ExitMode)
+        ),
         Style::default().fg(theme.fg_secondary),
     )))
     .style(styles::popup_style(theme));
