@@ -9,6 +9,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
+use crate::input::{Action as A, Action, KeyContext as K, KeyContext};
 use crate::ui::styles;
 
 pub fn render_message_details(frame: &mut Frame, app: &mut App) {
@@ -88,6 +89,23 @@ fn single_file_edge_help(supports_keyboard_enhancement: bool) -> &'static str {
     }
 }
 
+const KEY_WIDTH: usize = 10;
+
+/// A help row whose key column comes from the live keymap.
+fn key_row(keys: String, description: Span<'static>) -> Line<'static> {
+    let padding = KEY_WIDTH
+        .checked_sub(keys.width())
+        .filter(|n| *n > 0)
+        .unwrap_or(2);
+    Line::from(vec![
+        Span::styled(
+            format!("  {keys}{}", " ".repeat(padding)),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        description,
+    ])
+}
+
 const COMMENT_MODE_KEY_WIDTH: usize = "Shift-Enter/Alt-Enter/Ctrl-J".len();
 
 fn comment_mode_row(key: &str, description: &str) -> Line<'static> {
@@ -122,191 +140,119 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let keys = |context: KeyContext, actions: &[Action]| {
+        app.keymap.label(context, actions, app.leader_key)
+    };
     let help_text = vec![
         Line::from(Span::styled(
             "Navigation",
             Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                "  j/k       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        key_row(
+            keys(K::Diff, &[A::CursorDown(1), A::CursorUp(1)]),
             Span::raw("Scroll down/up"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Ctrl-e/y  ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::ScrollViewDown(1), A::ScrollViewUp(1)]),
             Span::raw("Scroll view down/up"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Ctrl-d/u  ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::HalfPageDown, A::HalfPageUp]),
             Span::raw("Half page down/up"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Ctrl-f/b  ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::PageDown, A::PageUp]),
             Span::raw("Full page down/up"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Ctrl-l    ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Global, &[A::Redraw]),
             Span::raw("Redraw the whole screen (works in every mode)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  g/G       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::GoToTop, A::GoToBottom]),
             Span::raw("Go to first/last file"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  {N}G      ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            format!("{{N}}{}", keys(K::Diff, &[A::GoToBottom])),
             Span::raw("Go to source line N in current file"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  {/}       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::PrevFile, A::NextFile]),
             Span::raw("Jump to prev/next file"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  [/]       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::PrevHunk, A::NextHunk]),
             Span::raw("Jump to prev/next hunk"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  m/M       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::NextComment, A::PrevComment]),
             Span::raw("Jump to next/previous comment"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  /         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::EnterSearchMode]),
             Span::raw("Search within diff (case-insensitive regex)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  n/N       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::SearchNext, A::SearchPrev]),
             Span::raw("Next/prev search match (wraps)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Esc       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::ClearSearchHighlight]),
             Span::raw("Clear search highlighting"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Enter     ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::Select]),
             Span::raw("Expand/collapse context (20 lines)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  S-Enter   ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::SelectFull]),
             Span::raw("Expand/collapse all hidden context"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Tab/S-Tab ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::ToggleFocus, A::ToggleFocusReverse]),
             Span::raw("Toggle focus next/previous panel"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!("  {leader}h/{leader}l     "),
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::FocusPaneLeft, A::FocusPaneRight]),
             Span::raw("Move focus left/right (side-by-side: between the two sides)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!("  {leader}k/{leader}j     "),
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::FocusPaneUp, A::FocusPaneDown]),
             Span::raw("Move focus up/down between panes"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!("  {leader}e        "),
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::ToggleFileList]),
             Span::raw("Toggle file list visibility"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!("  {leader}s        "),
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::ToggleCommits]),
             Span::raw("Toggle commit selector visibility (also `:set commits!`)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!("  {leader}f        "),
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::ToggleSingleFileView]),
             Span::raw("Toggle single-file view (also `:focus` / `:f`)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!("  {leader}p        "),
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::FilePicker]),
             Span::raw("Pick a file from a popup and jump to it (`/` filters)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!("  {leader}n        "),
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::ToggleRelativeNumber]),
             Span::raw("Toggle relative line numbers (also `:set relativenumber!`)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  h/l       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::ScrollLeft(4), A::ScrollRight(4)]),
             Span::raw("Scroll diff left/right (or ←/→)"),
-        ]),
-        Line::from(vec![
-            Span::styled("  h/← at 0 ", Style::default().add_modifier(Modifier::BOLD)),
+        ),
+        key_row(
+            format!("{} at 0", keys(K::Diff, &[A::ScrollLeft(4)])),
             Span::raw("Reveal + focus file list"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  l/→ in list",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            format!("{} in list", keys(K::FileTree, &[A::ScrollRight(4)])),
             Span::raw("Hide list + focus diff"),
-        ]),
+        ),
         Line::from(""),
         Line::from(Span::styled(
             format!("Single-file view (`:focus`, `:f`, {leader}f)"),
@@ -328,199 +274,127 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
         Line::from(Span::raw(
             "  ✓ marks commits covered by your latest submitted review.",
         )),
-        Line::from(vec![
-            Span::styled(
-                "  j/k       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        key_row(
+            keys(K::Commits, &[A::CursorDown(1), A::CursorUp(1)]),
             Span::raw("Navigate commits"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Space     ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Commits, &[A::ToggleExpand]),
             Span::raw("Toggle commit selection (updates diff)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Enter     ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Commits, &[A::Select]),
             Span::raw("Select only this commit (updates diff)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  (/)       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Commits, &[A::CycleCommitPrev, A::CycleCommitNext]),
             Span::raw("Cycle through individual commits"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Esc       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Commits, &[A::ExitMode]),
             Span::raw("Return focus to diff"),
-        ]),
+        ),
         Line::from(""),
         Line::from(Span::styled(
             "Review Target Selector",
             Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                "  Tab/S-Tab ",
-                Style::default().add_modifier(Modifier::BOLD),
+        key_row(
+            keys(
+                K::Targets,
+                &[A::TargetSelectorTabNext, A::TargetSelectorTabPrev],
             ),
             Span::raw("Switch tabs"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  j/k       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Targets, &[A::CursorDown(1), A::CursorUp(1)]),
             Span::raw("Move row"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Space     ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Targets, &[A::ToggleSelect]),
             Span::raw("Toggle commit selection (Local tab only)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Enter     ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Targets, &[A::Select]),
             Span::raw("Open selected target or load more"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  /         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Targets, &[A::EnterSearchMode]),
             Span::raw("Local filter for current tab"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  r         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Targets, &[A::TogglePrReviewRequestedFilter]),
             Span::raw("Cycle PR scope: all / requested / requested (me) on GitHub"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  a         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Targets, &[A::SessionsTabToggleShowEmpty]),
             Span::raw("Show/hide empty saved reviews (Sessions tab)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  dd        ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Targets, &[A::SessionsTabDelete]),
             Span::raw("Delete saved review, with confirm (Sessions tab)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Esc       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Targets, &[A::ExitMode]),
             Span::raw("Return to the diff"),
-        ]),
+        ),
         Line::from(""),
         Line::from(Span::styled(
             "Submit Action Picker (PR mode)",
             Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                "  j/k       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        key_row(
+            keys(K::SubmitPicker, &[A::CursorDown(1), A::CursorUp(1)]),
             Span::raw("Navigate review events"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Enter     ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::SubmitPicker, &[A::Select]),
             Span::raw("Submit the selected event"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Esc       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
-            Span::raw("Cancel"),
-        ]),
+        ),
+        key_row(keys(K::SubmitPicker, &[A::ExitMode]), Span::raw("Cancel")),
         Line::from(""),
         Line::from(Span::styled(
             "File Tree",
             Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                "  Space     ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        key_row(
+            keys(K::FileTree, &[A::ToggleExpand]),
             Span::raw("Toggle expand directory"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Enter     ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::FileTree, &[A::Select]),
             Span::raw("Expand dir / Jump to file"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  o         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::FileTree, &[A::ExpandAll]),
             Span::raw("Expand all directories"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  O         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::FileTree, &[A::CollapseAll]),
             Span::raw("Collapse all directories"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  i         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::FileTree, &[A::FileTreeFilterInclude]),
             Span::raw("Filter to files matching a regex (hides others from tree + diff)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  e         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::FileTree, &[A::FileTreeFilterExclude]),
             Span::raw("Filter out files matching a regex"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  I/E       ",
-                Style::default().add_modifier(Modifier::BOLD),
+        ),
+        key_row(
+            keys(
+                K::FileTree,
+                &[A::FileTreeClearInclude, A::FileTreeClearExclude],
             ),
             Span::raw("Clear the include/exclude filter"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  /         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::FileTree, &[A::EnterSearchMode]),
             Span::raw("Search file paths; n/N step matches (selection only)"),
-        ]),
+        ),
         Line::from(Span::raw(
             "  Patterns are case-insensitive and match the whole relative path.",
         )),
@@ -533,144 +407,90 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
             Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                "  j/k       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        key_row(
+            keys(K::Comments, &[A::CursorDown(1), A::CursorUp(1)]),
             Span::raw("Navigate comments"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  h/l       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Comments, &[A::ScrollLeft(4), A::ScrollRight(4)]),
             Span::raw("Scroll comment rows left/right"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Enter     ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Comments, &[A::Select]),
             Span::raw("Jump to selected comment"),
-        ]),
+        ),
         Line::from(""),
         Line::from(Span::styled(
             "Review Actions",
             Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                "  r         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        key_row(
+            keys(K::Diff, &[A::ToggleReviewed]),
             Span::raw("Toggle file reviewed (PR description: collapse)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  R         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::ToggleHunkReviewed]),
             Span::raw("Toggle hunk reviewed"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  c         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::AddLineComment]),
             Span::raw("Add line comment"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  C         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::AddFileComment]),
             Span::raw("Add file comment"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!("  {leader}c        "),
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::AddReviewComment]),
             Span::raw("Add review comment"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  i         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::EditComment]),
             Span::raw("Edit comment at cursor"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  dd        ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::DeleteComment]),
             Span::raw("Delete comment at cursor"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  y         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::ExportToClipboard]),
             Span::raw("Yank: mouse selection if any, else review to clipboard"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Y         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::CopyCommentAtCursor]),
             Span::raw("Copy comment at cursor to clipboard"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  e         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::EditFile]),
             Span::raw("Open focused file in editor config / $EDITOR"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  v/V       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Diff, &[A::EnterVisualMode]),
             Span::raw("Enter visual mode for range comments"),
-        ]),
+        ),
         Line::from(""),
         Line::from(Span::styled(
             "Visual Mode",
             Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                "  j/k       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        key_row(
+            keys(K::Visual, &[A::CursorDown(1), A::CursorUp(1)]),
             Span::raw("Extend selection down/up"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  c/Enter   ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Visual, &[A::AddRangeComment]),
             Span::raw("Create comment for selected range"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  s         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Visual, &[A::AddRangeSuggestion]),
             Span::raw("Suggest changes to selected code"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  Esc/v/V   ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Visual, &[A::ExitMode]),
             Span::raw("Cancel visual selection"),
-        ]),
+        ),
         Line::from(""),
         Line::from(Span::styled(
             "Comment Mode",
@@ -978,27 +798,18 @@ pub fn render_help(frame: &mut Frame, app: &mut App) {
             Span::raw("Check for updates"),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                "  /         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        key_row(
+            keys(K::Help, &[A::EnterSearchMode]),
             Span::raw("Search within this help (case-insensitive)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  n/N       ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Help, &[A::SearchNext, A::SearchPrev]),
             Span::raw("Next/previous help search match"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  ?         ",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
+        ),
+        key_row(
+            keys(K::Help, &[A::ToggleHelp]),
             Span::raw("Toggle this help"),
-        ]),
+        ),
     ];
 
     // Update help state with total lines and viewport height

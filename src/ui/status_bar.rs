@@ -9,7 +9,8 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::app::{App, DiffSource, FocusedPanel, InputMode, Message, MessageType};
+use crate::app::{App, DiffSource, InputMode, Message, MessageType};
+use crate::input::KeyContext;
 use crate::theme::Theme;
 use crate::ui::commit_row::CURSOR_GLYPH;
 use crate::ui::styles;
@@ -286,6 +287,113 @@ fn header_source_chunk(app: &App) -> Option<String> {
     }
 }
 
+/// The status-bar hint line for a keymap context, read from the live
+/// bindings so it follows `[keys]` overrides.
+fn key_hints(app: &App, context: KeyContext) -> String {
+    use crate::input::Action as A;
+    let down_up = [A::CursorDown(1), A::CursorUp(1)];
+    let items: &[(&[A], &str)] = match context {
+        KeyContext::FileTree => &[
+            (&down_up, "move"),
+            (&[A::Select], "open"),
+            (
+                &[A::FileTreeFilterInclude, A::FileTreeFilterExclude],
+                "filter",
+            ),
+            (&[A::FileTreeClearInclude, A::FileTreeClearExclude], "clear"),
+            (&[A::EnterSearchMode], "search"),
+            (&[A::ToggleReviewed], "reviewed"),
+        ],
+        KeyContext::Normal | KeyContext::Diff | KeyContext::Comments | KeyContext::Commits => &[
+            (&down_up, "scroll"),
+            (&[A::PrevFile, A::NextFile], "file"),
+            (&[A::NextComment, A::PrevComment], "comment"),
+            (&[A::ToggleReviewed], "file"),
+            (&[A::ToggleHunkReviewed], "hunk"),
+            (&[A::AddLineComment], "comment"),
+            (&[A::ToggleHelp], "help"),
+        ],
+        KeyContext::Help => &[
+            (&[A::EnterSearchMode], "search"),
+            (&[A::SearchNext, A::SearchPrev], "match"),
+            (&[A::ToggleHelp], "close"),
+        ],
+        KeyContext::Messages => &[(&down_up, "scroll"), (&[A::ToggleHelp], "close")],
+        KeyContext::Summary => &[
+            (&down_up, "select"),
+            (&[A::DeleteComment], "delete"),
+            (&[A::Select], "jump"),
+            (&[A::ExitMode], "close"),
+        ],
+        KeyContext::Confirm => &[(&[A::ConfirmYes], "yes"), (&[A::ConfirmNo], "no")],
+        KeyContext::Targets => &[
+            (&down_up, "navigate"),
+            (&[A::ToggleSelect], "select"),
+            (&[A::Select], "confirm"),
+            (&[A::ExitMode], "back"),
+        ],
+        KeyContext::Visual => &[
+            (&down_up, "extend"),
+            (&[A::AddRangeComment], "comment"),
+            (&[A::AddRangeSuggestion], "suggest"),
+            (&[A::CopySelection], "yank"),
+            (&[A::ExitMode], "cancel"),
+        ],
+        KeyContext::SubmitResolver => &[
+            (&down_up, "move"),
+            (&[A::Select], "toggle"),
+            (&[A::SubmitResolverAdvance], "submit"),
+            (&[A::ExitMode], "cancel"),
+        ],
+        KeyContext::SubmitConfirm => &[(&[A::ConfirmYes], "submit"), (&[A::ConfirmNo], "cancel")],
+        KeyContext::SubmitPicker => &[
+            (&down_up, "move"),
+            (&[A::Select], "submit"),
+            (&[A::ExitMode], "cancel"),
+        ],
+        KeyContext::ThemePicker => &[
+            (&down_up, "move"),
+            (&[A::Select], "apply"),
+            (&[A::EnterSearchMode], "filter"),
+            (&[A::ExitMode], "cancel"),
+        ],
+        KeyContext::FilePicker => &[
+            (&down_up, "move"),
+            (&[A::Select], "open"),
+            (&[A::EnterSearchMode], "filter"),
+            (&[A::ExitMode], "cancel"),
+        ],
+        KeyContext::Global => &[],
+    };
+    let mut line = String::new();
+    for (actions, label) in items {
+        let keys = app.keymap.label(context, actions, app.leader_key);
+        if keys == "\u{2014}" {
+            continue;
+        }
+        // Two cases of one action's key (`y/Y`) read as one key in a hint.
+        let parts: Vec<&str> = keys.split('/').collect();
+        let keys = parts
+            .iter()
+            .filter(|part| {
+                let lower = part.to_lowercase();
+                actions.len() > 1 || *part == &lower || !parts.contains(&lower.as_str())
+            })
+            .copied()
+            .collect::<Vec<_>>()
+            .join("/");
+        let keys = keys
+            .replace("Enter", "\u{21b5}")
+            .replace("Esc", "esc")
+            .replace("Space", "space");
+        line.push_str(if line.is_empty() { "   " } else { " \u{00b7} " });
+        line.push_str(&keys);
+        line.push(' ');
+        line.push_str(label);
+    }
+    line
+}
+
 pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
 
@@ -357,48 +465,18 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         } else if app.theme_picker_filtering() {
             Cow::Borrowed("   \u{21b5} apply filter \u{00b7} esc cancel filter")
         } else {
-            match app.input_mode {
-                InputMode::Normal if app.focused_panel == FocusedPanel::FileList => Cow::Borrowed(
-                    "   j/k move \u{00b7} \u{21b5} open \u{00b7} i/e filter \u{00b7} I/E clear \u{00b7} / search \u{00b7} r reviewed",
-                ),
-                InputMode::Normal => Cow::Borrowed(
-                    "   j/k scroll \u{00b7} {/} file \u{00b7} m/M comment \u{00b7} r file \u{00b7} R hunk \u{00b7} c comment \u{00b7} ? help",
-                ),
-                InputMode::Command => {
+            match (app.input_mode, app.key_context()) {
+                (InputMode::Command, _) => {
                     Cow::Borrowed("   tab complete \u{00b7} \u{21b5} execute \u{00b7} esc cancel")
                 }
-                InputMode::Search => Cow::Borrowed("   \u{21b5} search \u{00b7} esc cancel"),
-                InputMode::Comment if !app.comment_vim_enabled => {
-                    Cow::Borrowed("   ↑/↓ row \u{00b7} ctrl-s save \u{00b7} esc cancel")
-                }
-                InputMode::Comment => Cow::Borrowed("   ctrl-s save \u{00b7} esc cancel"),
-                InputMode::Help => Cow::Borrowed("   / search · n/N match · q/?/esc close"),
-                InputMode::MessageDetails => Cow::Borrowed("   j/k scroll · q/esc close"),
-                InputMode::Summary => {
-                    Cow::Borrowed("   j/k select · dd delete · ↵ jump · q/esc close")
-                }
-                InputMode::Confirm => Cow::Borrowed("   y yes \u{00b7} n no"),
-                InputMode::CommitSelect => Cow::Borrowed(
-                    "   j/k navigate \u{00b7} space select \u{00b7} \u{21b5} confirm \u{00b7} esc back",
+                (InputMode::Search, _) => Cow::Borrowed("   \u{21b5} search \u{00b7} esc cancel"),
+                (InputMode::Comment, _) if !app.comment_vim_enabled => Cow::Borrowed(
+                    "   \u{2191}/\u{2193} row \u{00b7} ctrl-s save \u{00b7} esc cancel",
                 ),
-                InputMode::VisualSelect => Cow::Borrowed(
-                    "   j/k extend \u{00b7} c/\u{21b5} comment \u{00b7} s suggest \u{00b7} y yank \u{00b7} esc/V cancel",
-                ),
-                InputMode::SubmitResolver => Cow::Borrowed(
-                    "   j/k move \u{00b7} \u{21b5} toggle \u{00b7} s submit \u{00b7} esc cancel",
-                ),
-                InputMode::SubmitConfirm => {
-                    Cow::Borrowed("   y submit \u{00b7} n cancel \u{00b7} esc cancel")
-                }
-                InputMode::SubmitActionPicker => {
-                    Cow::Borrowed("   j/k move \u{00b7} \u{21b5} submit \u{00b7} esc cancel")
-                }
-                InputMode::ThemePicker => Cow::Borrowed(
-                    "   j/k move \u{00b7} \u{21b5} apply \u{00b7} / filter \u{00b7} esc cancel",
-                ),
-                InputMode::FilePicker => Cow::Borrowed(
-                    "   j/k move \u{00b7} \u{21b5} open \u{00b7} / filter \u{00b7} esc cancel",
-                ),
+                (InputMode::Comment, _) => Cow::Borrowed("   ctrl-s save \u{00b7} esc cancel"),
+                (_, Some(context)) => Cow::Owned(key_hints(app, context)),
+                // The PR filter prompt.
+                (_, None) => Cow::Borrowed("   \u{21b5} apply \u{00b7} esc cancel"),
             }
         };
         let hints_span = Span::styled(hints, Style::default().fg(theme.fg_secondary));
@@ -1151,6 +1229,40 @@ mod header_snapshot_tests {
         let title = chunk.rsplit(" \u{00b7} ").next().unwrap();
         assert!(title.width() <= 60, "{title:?} is {} cells", title.width());
         assert!(title.ends_with('\u{2026}'));
+    }
+
+    #[test]
+    fn should_hint_the_default_diff_keys() {
+        use crate::input::KeyContext;
+        let app = build_local_app(DiffSource::WorkingTree, "abc");
+        assert_eq!(
+            super::key_hints(&app, KeyContext::Diff),
+            "   j/k scroll \u{00b7} {/} file \u{00b7} m/M comment \u{00b7} r file \u{00b7} R hunk \u{00b7} c comment \u{00b7} ? help"
+        );
+        assert_eq!(
+            super::key_hints(&app, KeyContext::Confirm),
+            "   y/\u{21b5} yes \u{00b7} n/esc no"
+        );
+    }
+
+    #[test]
+    fn should_hint_rebound_keys_and_skip_unbound_ones() {
+        use crate::input::KeyContext;
+        use crate::input::{Action, Binding, Keymap};
+        let mut app = build_local_app(DiffSource::WorkingTree, "abc");
+        app.keymap = Keymap::build(
+            ';',
+            &[
+                Binding::new(KeyContext::Normal, "r", Action::ToggleHunkReviewed),
+                Binding::new(KeyContext::Normal, "R", Action::ToggleReviewed),
+                Binding::new(KeyContext::Normal, "?", Action::None),
+            ],
+        )
+        .0;
+        assert_eq!(
+            super::key_hints(&app, KeyContext::Diff),
+            "   j/k scroll \u{00b7} {/} file \u{00b7} m/M comment \u{00b7} R file \u{00b7} r hunk \u{00b7} c comment"
+        );
     }
 
     fn build_local_app(diff_source: DiffSource, head_commit: &str) -> App {

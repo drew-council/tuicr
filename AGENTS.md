@@ -52,6 +52,7 @@ Repository-managed agent integration: `skills/tuicr/` (shared skill bundle that 
 - `KeyContext` mirrors the input state (`App::key_context()`): the four review panes inherit `Normal`, and everything inherits `Global` (`<C-l>` → `Redraw`). A more specific context replaces a parent binding for the same sequence. Text-input states have no context and use `keybindings::map_prompt_key`/`map_command_key`/`map_comment_key` (`map_file_picker_filter_key` adds `↑`/`↓`).
 - Multi-key sequences (`zz`, `ZZ`, `dd`, `<leader>e`) are entries in the same map. There are no timeouts: a key cannot be both bound and the start of a longer binding. A key that breaks a pending sequence is resolved on its own, so `z` then `j` moves down.
 - `handler::handle_key` is the whole key path: global keys, `{N}` digits (review panes only), sequence resolution through `App::pending_keys`, then `dispatch_action`. `main.rs` only adds the double `Ctrl-c` exit and the vim comment editor in front of it.
+- The help popup and the status-bar hints look keys up with `Keymap::label`, so they follow `[keys]` overrides. Never hard-code a bindable key there.
 - `KeyChord` normalizes terminal reports: Shift is dropped once it is in the character (`G`), `Shift-Tab` is `BackTab`, a raw `\t` is `Tab`, and Windows AltGr (Ctrl+Alt) is the bare character.
 - Terminals report Esc followed quickly by a key as Alt+key (tmux within `escape-time`, the e2e harness on every `Escape` then `:`). `handler::split_escape_prefix` replays an Alt chord that nothing binds as `<Esc>` then the bare key, as Vim does; bound Alt chords (`Alt-b` in the comment box) keep their meaning.
 - `Redraw` and `Event::Resize` call `App::request_full_redraw`; the main loop then calls `TerminalSession::repaint_from_scratch` inside the synchronized update. Never use ratatui's `Terminal::clear` there: it queries the cursor position, which times out under `--stdout`.
@@ -103,8 +104,8 @@ configuration options in `docs/CONFIG.md` only.
 | Document               | Update when adding/changing...                                                                                           |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `README.md`            | Keybindings, commands (`:*`), CLI flags, features list, installation methods, agent integration setup, forge limitations |
-| `src/ui/help_popup.rs` | Keybindings or commands (update the `help_text` vector)                                                                  |
-| `src/ui/status_bar.rs` | Keybindings worth advertising in the per-pane hint line                                                                  |
+| `src/ui/help_popup.rs` | Commands, or a new help row (`key_row(keys(context, &[action]), …)` reads its keys from the keymap)                       |
+| `src/ui/status_bar.rs` | Actions worth advertising in the per-context hint line (`key_hints`)                                                     |
 | `docs/CLI.md`          | Any clap flag, subcommand, env var, stderr marker, or exit code: add a row to the matching table                          |
 | `docs/KEYBINDINGS.md`  | Any keybinding or `:` command: add a row to the pane's key table and the `:` command table, plus prose for new behavior  |
 | `AGENTS.md`            | Key types, invariants, non-obvious behavior, general gotchas, repo-managed agent integrations (forge detail goes in `docs/FORGES.md`) |
