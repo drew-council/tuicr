@@ -7,6 +7,8 @@ use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use toml::Value;
 
+use crate::input::{Action, Binding, KeyContext};
+
 /// Parsed `ignore_whitespace` setting.
 ///
 /// Booleans keep the legacy global modes. `"auto"` selects per-extension
@@ -216,8 +218,7 @@ pub struct AppConfig {
     /// `<leader>s` or `:set commits!`.
     pub show_commits: Option<bool>,
     /// Whether files already marked reviewed appear in the file tree and the
-    /// diff. Defaults to true; toggle at runtime with `H` (file tree) or
-    /// `:set reviewed!`.
+    /// diff. Defaults to true; toggle at runtime with `:set reviewed!`.
     pub show_reviewed: Option<bool>,
     pub diff_view: Option<String>,
     /// Inline commit selector display order: `"descending"` (newest-first,
@@ -291,6 +292,9 @@ pub struct AppConfig {
     /// `[export]` section settings. `None` means "no override"; downstream
     /// code should treat it as `ExportConfig::default()`.
     pub export: Option<ExportConfig>,
+    /// `[keys.<context>]` bindings, applied over the built-in keymap.
+    #[serde(skip)]
+    pub keys: Vec<Binding>,
 }
 
 impl AppConfig {
@@ -357,6 +361,7 @@ const KNOWN_KEYS: &[&str] = &[
     "clipboard_command",
     "forge",
     "export",
+    "keys",
 ];
 
 const FORGE_KNOWN_KEYS: &[&str] = &["comment_type_prefix", "comment_type_format", "pr_search"];
@@ -794,6 +799,10 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
         export: table
             .get("export")
             .and_then(|v| parse_export(v, &mut warnings)),
+        keys: table
+            .get("keys")
+            .map(|v| parse_keys(v, &mut warnings))
+            .unwrap_or_default(),
     };
 
     for key in table.keys() {
@@ -855,6 +864,55 @@ fn parse_forge(value: &Value, warnings: &mut Vec<String>) -> Option<ForgeConfig>
     }
 
     if any_override { Some(cfg) } else { None }
+}
+
+/// Parse `[keys.<context>]` tables of `"<keys>" = "<action>"`. An action of
+/// `"none"` removes the binding. Key strings are checked when the keymap is
+/// built, which knows the leader.
+fn parse_keys(value: &Value, warnings: &mut Vec<String>) -> Vec<Binding> {
+    let Some(table) = value.as_table() else {
+        warnings.push("Warning: Config key 'keys' must be a table; ignoring value".to_string());
+        return Vec::new();
+    };
+    let mut bindings = Vec::new();
+    for (context_name, entries) in table {
+        let Some(context) = KeyContext::from_name(context_name) else {
+            warnings.push(format!(
+                "Warning: Unknown config key 'keys.{context_name}', ignoring"
+            ));
+            continue;
+        };
+        let Some(entries) = entries.as_table() else {
+            warnings.push(format!(
+                "Warning: Config key 'keys.{context_name}' must be a table; ignoring value"
+            ));
+            continue;
+        };
+        for (keys, action) in entries {
+            let Some(name) = action.as_str() else {
+                warnings.push(format!(
+                    "Warning: keys.{context_name} '{keys}' must name an action; ignoring binding"
+                ));
+                continue;
+            };
+            let action = if name == "none" {
+                Some(Action::None)
+            } else {
+                Action::from_name(name)
+            };
+            match action {
+                Some(action) => bindings.push(Binding {
+                    context,
+                    keys: keys.clone().into(),
+                    action,
+                }),
+                None => warnings.push(format!(
+                    "Warning: keys.{context_name} '{keys}': unknown action '{name}'; ignoring binding"
+                )),
+            }
+        }
+    }
+    bindings
 }
 
 /// Parse the `[export]` section. Returns `Some` only when at least one
@@ -2118,6 +2176,42 @@ mod tests {
         assert_eq!(
             outcome.warnings[0],
             "Warning: Config key 'mouse' must be a boolean; ignoring value"
+        );
+    }
+
+    // keys
+
+    #[test]
+    fn should_parse_key_bindings_per_context() {
+        let outcome = parse_config(
+            "[keys.normal]\n\"<C-s>\" = \"submit\"\n\"Y\" = \"none\"\n[keys.file-tree]\nH = \"toggle-show-reviewed\"\n",
+        );
+        assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+        let keys = outcome.config.map(|cfg| cfg.keys).unwrap_or_default();
+        assert_eq!(
+            keys,
+            vec![
+                Binding::new(KeyContext::FileTree, "H", Action::ToggleShowReviewed),
+                Binding::new(KeyContext::Normal, "<C-s>", Action::SubmitPicker),
+                Binding::new(KeyContext::Normal, "Y", Action::None),
+            ]
+        );
+    }
+
+    #[test]
+    fn should_warn_and_skip_bad_key_bindings() {
+        let outcome = parse_config(
+            "[keys.normal]\nx = \"no-such-action\"\ny = 3\n[keys.nowhere]\nz = \"quit\"\n",
+        );
+        assert_eq!(outcome.config.map(|cfg| cfg.keys), Some(Vec::new()));
+        assert_eq!(
+            outcome.warnings,
+            vec![
+                "Warning: keys.normal 'x': unknown action 'no-such-action'; ignoring binding"
+                    .to_string(),
+                "Warning: keys.normal 'y' must name an action; ignoring binding".to_string(),
+                "Warning: Unknown config key 'keys.nowhere', ignoring".to_string(),
+            ]
         );
     }
 
