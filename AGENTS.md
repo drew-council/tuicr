@@ -42,8 +42,8 @@ Numbered once; forge/PR-mode gotchas (F*, G*) live in `docs/FORGES.md`.
 | `docs/CONFIG.md` | Any `config.toml` key: a row in Options and a line in Full example (only critical keys also go in `README.md`) |
 | `docs/CLI.md` | Any clap flag, subcommand, env var, stderr marker, or exit code |
 | `docs/KEYBINDINGS.md` | Any keybinding or `:` command: a row in the pane's key table and the `:` command table, prose for new behaviour |
-| `src/ui/help_popup.rs` | Keybindings or commands (`help_text`) |
-| `src/ui/status_bar.rs` | Keybindings worth advertising in the per-pane hint line |
+| `src/ui/help_popup.rs` | A new key help row (`key_row(keys(context, &[action]), …)` reads its keys from the keymap). `:` command rows come from `ACTIONS` |
+| `src/ui/status_bar.rs` | Actions worth advertising in the per-context hint line (`key_hints`) |
 | `docs/GITHUB.md` | GitHub PR behaviour: setup, targets, submit events, limitations |
 | `docs/FORGES.md` | Forge backend contracts, detection, session/submit rules, F*/G* gotchas |
 | `docs/INTERNALS.md` | Subsystem invariants and gotchas (non-forge) |

@@ -24,6 +24,7 @@ Subsystem invariants, loaded on demand from `AGENTS.md`. Cross-cutting rules and
 - `handler::handle_key` is the full key path: `{N}` digits (review panes only), sequence resolution through `App::pending_keys` against the context's effective map, then `dispatch_action`. In text-input states it checks `global` bindings and then the fixed editor keys. `main.rs` puts only the double `Ctrl-c` exit and the vim comment editor ahead of it.
 - `KeyChord` (`keyspec.rs`) normalizes terminal events. It drops Shift once folded into the character (`G`), and turns `Shift-Tab` into `BackTab`, raw `\t` into `Tab`, and Windows AltGr (Ctrl+Alt) into the bare character.
 - Terminals report Esc followed quickly by a key as Alt+key (tmux within `escape-time`, the e2e harness on every `Escape` then `:`). `handler::split_escape_prefix` splits unbound Alt chords into `<Esc>` then the bare key (as Vim does). Bound Alt chords (`Alt-b` in the comment box) keep their meaning.
+- The help popup, status-bar hints, and selector/picker/resolver footers resolve keys through `Keymap::label` (`status_bar::hint_line`) so they follow `[keys]` overrides. Help lists `:` commands from `ACTIONS`. Never hard-code a bindable key there. Three legends still name a default key (the help title, the summary title, and the submit-confirm footer).
 
 ## Modes and pickers (`InputMode`, `src/app/mod.rs`)
 
