@@ -1206,8 +1206,7 @@ fn esc_in_inline_selector_returns_focus_to_diff() {
     app.focused_panel = FocusedPanel::CommitSelector;
     app.search_highlight_visible = true;
 
-    let action = crate::handler::map_normal_path_key(&app, esc_key());
-    crate::handler::dispatch_action(&mut app, action);
+    crate::handler::handle_key(&mut app, esc_key());
 
     assert_eq!(app.focused_panel, FocusedPanel::Diff);
     assert_eq!(app.commit_selection_range, Some((0, 11)));
@@ -1221,8 +1220,7 @@ fn esc_in_diff_pane_clears_search_highlight() {
     app.focused_panel = FocusedPanel::Diff;
     app.search_highlight_visible = true;
 
-    let action = crate::handler::map_normal_path_key(&app, esc_key());
-    crate::handler::dispatch_action(&mut app, action);
+    crate::handler::handle_key(&mut app, esc_key());
 
     assert!(!app.search_highlight_visible);
     assert_eq!(app.focused_panel, FocusedPanel::Diff);
