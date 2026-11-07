@@ -1,6 +1,6 @@
 use crate::app::*;
 use crate::handler::handle_file_picker_action;
-use crate::input::keybindings::Action;
+use crate::input::Action;
 use crate::model::{DiffFile, DiffHunk, DiffLine, FileStatus, LineOrigin};
 use crate::vcs::traits::{VcsBackend, VcsInfo, VcsType};
 use std::path::PathBuf;
@@ -131,7 +131,7 @@ fn listed(app: &App) -> Vec<String> {
 
 /// Press `/`, type `pattern`, and leave the draft open.
 fn type_filter(app: &mut App, pattern: &str) {
-    handle_file_picker_action(app, Action::FilePickerFilter);
+    handle_file_picker_action(app, Action::EnterSearchMode);
     for ch in pattern.chars() {
         handle_file_picker_action(app, Action::InsertChar(ch));
     }
@@ -263,7 +263,7 @@ fn should_jump_to_the_selected_file_and_close_on_enter() {
     app.enter_file_picker_mode();
     handle_file_picker_action(&mut app, Action::CursorDown(99));
 
-    handle_file_picker_action(&mut app, Action::SubmitInput);
+    handle_file_picker_action(&mut app, Action::Select);
 
     let target = index_of(&app, "tests/smoke.rs");
     assert_eq!(app.input_mode, InputMode::Normal);
@@ -477,7 +477,7 @@ fn should_not_report_filtering_once_the_mode_is_forced_back_to_normal() {
 fn should_paste_into_the_filter_draft_as_one_line() {
     let mut app = app_with(&["src/main.rs", "README.md"]);
     app.enter_file_picker_mode();
-    handle_file_picker_action(&mut app, Action::FilePickerFilter);
+    handle_file_picker_action(&mut app, Action::EnterSearchMode);
 
     crate::handler::handle_paste(&mut app, "READ\nME".into());
 
@@ -488,7 +488,7 @@ fn should_paste_into_the_filter_draft_as_one_line() {
 fn should_drop_carriage_returns_when_pasting_into_the_filter_draft() {
     let mut app = app_with(&["src/main.rs", "README.md"]);
     app.enter_file_picker_mode();
-    handle_file_picker_action(&mut app, Action::FilePickerFilter);
+    handle_file_picker_action(&mut app, Action::EnterSearchMode);
 
     crate::handler::handle_paste(&mut app, "RE\r\nAD\rME".into());
 
