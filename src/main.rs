@@ -13,8 +13,8 @@ use tuicr::app::{self, App, AppStartupOptions, FocusedPanel, InputMode};
 use tuicr::cli::parse_cli_args;
 use tuicr::config::IgnoreWhitespaceConfig;
 use tuicr::editor::{EditorCommand, EditorError, EditorLaunch, EditorSurface, EditorTarget};
-use tuicr::handler::{handle_mouse_event, handle_paste};
-use tuicr::input::Action;
+use tuicr::handler::{dispatch_action, handle_mouse_event, handle_paste};
+use tuicr::input::{Action, Invocation};
 use tuicr::terminal_state::{TerminalFeatures, TerminalSession};
 use tuicr::theme::{is_syntax_theme_fallback_warning, resolve_theme_with_config};
 use tuicr::vcs::{DiffWhitespaceMode, GitBackendPreference, WhitespaceAutoPolicy};
@@ -733,7 +733,7 @@ fn main() -> anyhow::Result<()> {
                     // route through the filter-specific key map so typed
                     // characters update the filter buffer rather than driving
                     // commit-list navigation.
-                    let mut action = handler::map_normal_path_key(&app, key);
+                    let action = handler::map_normal_path_key(&app, key);
 
                     // Handle pending command setters (these work in any mode)
                     match action {
@@ -761,59 +761,21 @@ fn main() -> anyhow::Result<()> {
                     }
 
                     // Vim-style {count}{motion} (Normal mode only): digits accumulate
-                    // into `pending_count`, then a following motion either scales its
-                    // inner count parameter or is dispatched repeatedly. `{count}G`
-                    // jumps to source line `count` (already existing behaviour).
+                    // into `pending_count`, and the next action consumes it.
+                    let mut count = None;
                     if app.input_mode == InputMode::Normal {
-                        match action {
-                            Action::Digit(d) => {
-                                let n = app.pending_count.unwrap_or(0);
-                                app.pending_count = Some(
-                                    (n.saturating_mul(10).saturating_add(d as usize)).min(999_999),
-                                );
-                                continue;
-                            }
-                            Action::GoToBottom if app.pending_count.is_some() => {
-                                let count = app.pending_count.unwrap().max(1);
-                                app.pending_count = None;
-                                app.go_to_source_line(count as u32, tuicr::model::LineSide::New);
-                                continue;
-                            }
-                            _ => {
-                                if let Some(count) = app.pending_count.take() {
-                                    let count = count.max(1);
-                                    match &mut action {
-                                        Action::CursorDown(n)
-                                        | Action::CursorUp(n)
-                                        | Action::ScrollLeft(n)
-                                        | Action::ScrollRight(n)
-                                        | Action::ScrollViewDown(n)
-                                        | Action::ScrollViewUp(n) => {
-                                            *n = n.saturating_mul(count);
-                                        }
-                                        Action::NextFile
-                                        | Action::PrevFile
-                                        | Action::NextHunk
-                                        | Action::PrevHunk => {
-                                            // Dispatch `count - 1` extra times; the
-                                            // last one runs through normal dispatch
-                                            // below.
-                                            for _ in 1..count {
-                                                handler::dispatch_action(&mut app, action.clone());
-                                            }
-                                        }
-                                        _ => {
-                                            // Count silently discarded for non-motion
-                                            // actions (mode changes, edits, etc.).
-                                        }
-                                    }
-                                }
-                            }
+                        if let Action::Digit(d) = action {
+                            let n = app.pending_count.unwrap_or(0);
+                            app.pending_count = Some(
+                                (n.saturating_mul(10).saturating_add(d as usize)).min(999_999),
+                            );
+                            continue;
                         }
+                        count = app.pending_count.take();
                     }
 
                     let previous_mode = app.input_mode;
-                    handler::dispatch_action(&mut app, action);
+                    dispatch_action(&mut app, Invocation::new(action, count));
                     if previous_mode != InputMode::Summary && app.input_mode == InputMode::Summary {
                         // Summary identities are populated by rendering before queued input.
                         break;
