@@ -207,6 +207,7 @@ pub const DEFAULT_BINDINGS: &[(KeyContext, &str, Action)] = &[
     (K::FileTree, "e", A::FileTreeFilterExclude),
     (K::FileTree, "I", A::FileTreeClearInclude),
     (K::FileTree, "E", A::FileTreeClearExclude),
+    (K::Commits, "<Esc>", A::ExitMode),
     // Visual selection
     (K::Visual, "j", A::CursorDown(1)),
     (K::Visual, "<Down>", A::CursorDown(1)),
@@ -710,6 +711,19 @@ mod tests {
         );
         assert_eq!(run(&keymap, K::Diff, "i"), Resolution::Run(A::EditComment));
         assert_eq!(run(&keymap, K::Diff, "e"), Resolution::Run(A::EditFile));
+    }
+
+    #[test]
+    fn should_return_from_the_commit_pane_on_escape() {
+        let keymap = defaults();
+        assert_eq!(
+            run(&keymap, K::Commits, "<Esc>"),
+            Resolution::Run(A::ExitMode)
+        );
+        assert_eq!(
+            run(&keymap, K::Diff, "<Esc>"),
+            Resolution::Run(A::ClearSearchHighlight)
+        );
     }
 
     #[test]
