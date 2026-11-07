@@ -184,3 +184,101 @@ fn should_drop_the_count_for_actions_that_ignore_it() {
         manual.diff_state.cursor_line
     );
 }
+
+#[test]
+fn should_quit_a_clean_session() {
+    let mut app = three_files();
+
+    dispatch_action(&mut app, Action::Quit);
+
+    assert!(app.should_quit);
+}
+
+fn with_unsaved_comment() -> App {
+    let mut app = three_files();
+    let path = PathBuf::from("a.rs");
+    app.session.add_file(path.clone(), FileStatus::Modified, 0);
+    app.session
+        .get_file_mut(&path)
+        .unwrap()
+        .add_file_comment(crate::model::Comment::new(
+            "note".to_string(),
+            crate::model::CommentType::from_id("note"),
+            None,
+        ));
+    app.dirty = true;
+    app
+}
+
+#[test]
+fn should_take_a_second_press_to_confirm_quit_with_unsaved_comments() {
+    let mut app = with_unsaved_comment();
+
+    dispatch_action(&mut app, Action::ConfirmQuit);
+    assert!(!app.should_quit);
+
+    dispatch_action(&mut app, Action::ConfirmQuit);
+    assert!(app.should_quit);
+}
+
+#[test]
+fn should_ask_again_when_another_action_follows_the_quit_warning() {
+    let mut app = with_unsaved_comment();
+
+    dispatch_action(&mut app, Action::ConfirmQuit);
+    dispatch_action(&mut app, Action::CursorDown(1));
+    dispatch_action(&mut app, Action::ConfirmQuit);
+
+    assert!(!app.should_quit);
+}
+
+#[test]
+fn should_confirm_quit_at_once_outside_the_review_panes() {
+    let mut app = with_unsaved_comment();
+    app.input_mode = InputMode::VisualSelect;
+
+    dispatch_action(&mut app, Action::ConfirmQuit);
+
+    assert!(app.should_quit);
+}
+
+#[test]
+fn should_force_quit_a_dirty_session() {
+    let mut app = three_files();
+    app.dirty = true;
+
+    dispatch_action(&mut app, Action::ForceQuit);
+
+    assert!(app.should_quit);
+}
+
+#[test]
+fn should_run_the_same_action_for_a_command_and_a_key() {
+    let mut by_command = three_files();
+    by_command.enter_command_mode();
+    by_command.command_buffer = "set relativenumber!".into();
+    crate::handler::handle_command_action(&mut by_command, Action::SubmitInput);
+
+    let mut by_key = three_files();
+    dispatch_action(&mut by_key, Action::ToggleRelativeNumber);
+
+    assert_eq!(by_command.input_mode, InputMode::Normal);
+    assert!(by_command.relative_line_numbers);
+    assert!(by_key.relative_line_numbers);
+}
+
+#[test]
+fn should_run_a_line_number_command_as_a_counted_jump() {
+    let mut by_command = three_files();
+    by_command.enter_command_mode();
+    by_command.command_buffer = "12".into();
+    crate::handler::handle_command_action(&mut by_command, Action::SubmitInput);
+
+    let mut by_key = three_files();
+    dispatch_action(&mut by_key, Invocation::new(Action::GoToBottom, Some(12)));
+
+    assert_eq!(
+        by_command.diff_state.cursor_line,
+        by_key.diff_state.cursor_line
+    );
+}

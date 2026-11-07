@@ -3,6 +3,7 @@ use std::io::{self, IsTerminal, Write};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use crossterm::event::{KeyCode, KeyModifiers};
 use crossterm::{
     event::{self, Event, KeyEventKind},
     execute, queue,
@@ -624,148 +625,54 @@ fn main() -> anyhow::Result<()> {
                         continue;
                     }
 
-                    // Handle pending z command for zz/zt/zb viewport positioning
-                    if pending_z {
-                        pending_z = false;
+                    // Second key of a `z`, `Z`, `d` or `<leader>` sequence. A key
+                    // that completes none falls through to normal handling.
+                    let prefixed = if std::mem::take(&mut pending_z) {
                         match key.code {
-                            crossterm::event::KeyCode::Char('z') => {
-                                app.center_cursor();
-                                continue;
-                            }
-                            crossterm::event::KeyCode::Char('t') => {
-                                app.cursor_to_top();
-                                continue;
-                            }
-                            crossterm::event::KeyCode::Char('b') => {
-                                app.cursor_to_bottom();
-                                continue;
-                            }
-                            _ => {} // Fall through to normal handling
+                            KeyCode::Char('z') => Some(Action::CenterCursor),
+                            KeyCode::Char('t') => Some(Action::CursorToTop),
+                            KeyCode::Char('b') => Some(Action::CursorToBottom),
+                            _ => None,
                         }
-                    }
-
-                    // Handle pending Z command for ZZ (export+quit) / ZQ (quit)
-                    if pending_shift_z {
-                        pending_shift_z = false;
+                    } else if std::mem::take(&mut pending_shift_z) {
                         match key.code {
-                            crossterm::event::KeyCode::Char('Z') => {
-                                // ZZ: save session, export, and quit (same as :wq)
-                                handler::handle_write_and_quit(&mut app);
-                                continue;
-                            }
-                            crossterm::event::KeyCode::Char('Q') => {
-                                // ZQ: quit without exporting (same as q)
-                                app.should_quit = true;
-                                continue;
-                            }
-                            _ => {} // Fall through to normal handling
+                            KeyCode::Char('Z') => Some(Action::ExportQuit),
+                            KeyCode::Char('Q') => Some(Action::ForceQuit),
+                            _ => None,
                         }
-                    }
-
-                    // Handle pending d command for dd delete comment
-                    if pending_d {
-                        pending_d = false;
-                        if key.code == crossterm::event::KeyCode::Char('d')
-                            && key.modifiers == crossterm::event::KeyModifiers::NONE
-                        {
-                            // In the target selector `dd` deletes the saved
-                            // review under the cursor, not a comment.
-                            if app.input_mode == InputMode::CommitSelect {
-                                handler::handle_commit_select_action(
-                                    &mut app,
-                                    Action::SessionsTabDelete,
-                                );
-                                continue;
+                    } else if std::mem::take(&mut pending_d) {
+                        match (key.code, key.modifiers) {
+                            (KeyCode::Char('d'), KeyModifiers::NONE)
+                                if app.input_mode == InputMode::CommitSelect =>
+                            {
+                                Some(Action::SessionsTabDelete)
                             }
-                            if app.input_mode == InputMode::Summary {
-                                if !app.delete_selected_summary_comment() {
-                                    app.set_warning(
-                                        "Selected comment is no longer editable or available",
-                                    );
-                                }
-                                // Refresh IDs and clamp selection before another queued dd.
-                                break;
-                            }
-                            if app.cursor_on_locked_comment() {
-                                let forge = app.forge_display_name();
-                                app.set_message(format!(
-                                    "Comment already pushed to {forge} — read only in tuicr"
-                                ));
-                            } else if !app.delete_comment_at_cursor() {
-                                if app.begin_remote_draft_delete() {
-                                    // Waiting on the confirmation prompt.
-                                } else if app.cursor_on_remote_thread() {
-                                    let forge = app.forge_display_name();
-                                    app.set_message(format!(
-                                        "{forge} comment — read only in tuicr"
-                                    ));
-                                } else {
-                                    app.set_message("No comment at cursor");
-                                }
-                            }
-                            continue;
+                            (KeyCode::Char('d'), KeyModifiers::NONE) => Some(Action::DeleteComment),
+                            _ => None,
                         }
-                        // Otherwise fall through to normal handling
-                    }
-
-                    // Handle pending leader command for panel focus, file list toggle, and review comments.
-                    if pending_leader {
-                        pending_leader = false;
+                    } else if std::mem::take(&mut pending_leader) {
                         match key.code {
-                            crossterm::event::KeyCode::Char('e') => {
-                                app.toggle_file_list();
-                                continue;
-                            }
-                            crossterm::event::KeyCode::Char('h') => {
-                                app.focus_pane_left();
-                                continue;
-                            }
-                            crossterm::event::KeyCode::Char('l') => {
-                                app.focus_pane_right();
-                                continue;
-                            }
-                            crossterm::event::KeyCode::Char('k') => {
-                                if app.focused_panel == app::FocusedPanel::Comments {
-                                    app.focused_panel = app::FocusedPanel::FileList;
-                                } else if app.has_inline_commit_selector() {
-                                    app.focused_panel = app::FocusedPanel::CommitSelector;
-                                }
-                                continue;
-                            }
-                            crossterm::event::KeyCode::Char('j') => {
-                                if app.focused_panel == app::FocusedPanel::FileList
-                                    && app.has_comment_navigator_items()
-                                {
-                                    app.focused_panel = app::FocusedPanel::Comments;
-                                } else {
-                                    app.focused_panel = app::FocusedPanel::Diff;
-                                }
-                                continue;
-                            }
-                            crossterm::event::KeyCode::Char('c') => {
-                                app.enter_review_comment_mode();
-                                continue;
-                            }
-                            // `<leader>s` toggles the commit selector pane.
-                            crossterm::event::KeyCode::Char('s') => {
-                                app.toggle_commit_selector();
-                                continue;
-                            }
-                            crossterm::event::KeyCode::Char('f') => {
-                                app.toggle_single_file_view();
-                                continue;
-                            }
-                            crossterm::event::KeyCode::Char('n') => {
-                                app.relative_line_numbers = !app.relative_line_numbers;
-                                continue;
-                            }
-                            crossterm::event::KeyCode::Char('p') => {
-                                app.enter_file_picker_mode();
-                                continue;
-                            }
-                            _ => {}
+                            KeyCode::Char('e') => Some(Action::ToggleFileList),
+                            KeyCode::Char('h') => Some(Action::FocusPaneLeft),
+                            KeyCode::Char('l') => Some(Action::FocusPaneRight),
+                            KeyCode::Char('k') => Some(Action::FocusPaneUp),
+                            KeyCode::Char('j') => Some(Action::FocusPaneDown),
+                            KeyCode::Char('c') => Some(Action::AddReviewComment),
+                            KeyCode::Char('s') => Some(Action::ToggleCommits),
+                            KeyCode::Char('f') => Some(Action::ToggleSingleFileView),
+                            KeyCode::Char('n') => Some(Action::ToggleRelativeNumber),
+                            KeyCode::Char('p') => Some(Action::FilePicker),
+                            _ => None,
                         }
-                        // Otherwise fall through to normal handling
+                    } else {
+                        None
+                    };
+                    if let Some(action) = prefixed {
+                        dispatch_action(&mut app, action);
+                        if app.input_mode == InputMode::Summary {
+                            break;
+                        }
+                        continue;
                     }
 
                     // Vim modal editing: route comment-box keys to the edtui
@@ -822,10 +729,10 @@ fn main() -> anyhow::Result<()> {
                         count = app.pending_count.take();
                     }
 
-                    let previous_mode = app.input_mode;
                     dispatch_action(&mut app, Invocation::new(action, count));
-                    if previous_mode != InputMode::Summary && app.input_mode == InputMode::Summary {
-                        // Summary identities are populated by rendering before queued input.
+                    // The summary view assigns comment identities when it
+                    // renders, and the next key (a queued `dd`) reads them.
+                    if app.input_mode == InputMode::Summary {
                         break;
                     }
                     if let Some(target) = app.take_pending_editor_target() {
