@@ -182,6 +182,7 @@ impl App {
         for (_dir, files) in dir_map {
             self.diff_files.extend(files);
         }
+        self.apply_review_guide();
 
         if let Some(path) = current_path
             && let Some(idx) = self

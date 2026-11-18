@@ -1,7 +1,8 @@
+use std::ops::Range;
 use std::sync::Arc;
 
 use ratatui::{
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
 };
 
@@ -12,6 +13,7 @@ use crate::forge::traits::{
     PullRequestCheckStatus, PullRequestInfo, PullRequestIssueComment, PullRequestReviewStatus,
 };
 use crate::model::CommentType;
+use crate::review_guide::ReviewGuide;
 use crate::theme::Theme;
 use crate::ui::comment_panel::{self, CommentTypePresentation};
 use crate::ui::diff_view::{HEADER_RULE, cursor_indicator, cursor_indicator_spaced};
@@ -43,36 +45,54 @@ pub fn pr_info_render_height(app: &App) -> usize {
 ///
 /// The full panel (markdown highlighting included) is expensive and is asked
 /// for once per row by the height counters, so it is built once per
-/// (width, PR metadata) and shared. `App::set_theme` drops the cache.
+/// (width, PR metadata, review guide) and shared. `App::set_theme` drops the
+/// cache.
 pub fn pr_info_display_lines(app: &App) -> Arc<Vec<Line<'static>>> {
+    pr_info_rows(app).0
+}
+
+/// The rows of `pr_info_display_lines` that hold the review guide section.
+/// Empty, at the row the section would start on, when there is no guide.
+pub(crate) fn pr_info_guide_rows(app: &App) -> Range<usize> {
+    pr_info_rows(app).1
+}
+
+fn pr_info_rows(app: &App) -> (Arc<Vec<Line<'static>>>, Range<usize>) {
     let Some(info) = app.pr_info.as_ref() else {
-        return Arc::new(Vec::new());
+        return (Arc::new(Vec::new()), 0..0);
     };
     if app.session.pr_description_reviewed {
-        return Arc::new(vec![build_collapsed_pr_info_line(info, &app.theme)]);
+        let rows = vec![build_collapsed_pr_info_line(info, &app.theme)];
+        return (Arc::new(rows), 1..1);
     }
     let width = pr_info_content_width(app.diff_state.viewport_width);
+    let guide = app.current_review_guide().map(|active| &active.guide);
     let mut cache = app.pr_info_rows_cache.borrow_mut();
     if let Some(hit) = cache
         .as_ref()
-        .filter(|hit| hit.width == width && hit.info == *info)
+        .filter(|hit| hit.width == width && hit.info == *info && hit.guide.as_ref() == guide)
     {
-        return Arc::clone(&hit.rows);
+        return (Arc::clone(&hit.rows), hit.guide_rows.clone());
     }
-    let rows = Arc::new(build_pr_info_lines(info, width, &app.theme));
+    let (rows, guide_rows) = build_pr_info_rows(info, guide, width, &app.theme);
+    let rows = Arc::new(rows);
     *cache = Some(PrInfoRowsCache {
         width,
         info: info.clone(),
+        guide: guide.cloned(),
         rows: Arc::clone(&rows),
+        guide_rows: guide_rows.clone(),
     });
-    rows
+    (rows, guide_rows)
 }
 
-/// Memoised output of `pr_info_display_lines`, keyed on width and PR metadata.
+/// Memoised output of `pr_info_rows`, keyed on width, PR metadata, and guide.
 pub(crate) struct PrInfoRowsCache {
     width: usize,
     info: PullRequestInfo,
+    guide: Option<ReviewGuide>,
     rows: Arc<Vec<Line<'static>>>,
+    guide_rows: Range<usize>,
 }
 
 /// Single row a reviewed PR description collapses to. The `✓` mirrors the
@@ -193,6 +213,17 @@ pub fn build_pr_info_lines(
     width: usize,
     theme: &Theme,
 ) -> Vec<Line<'static>> {
+    build_pr_info_rows(info, None, width, theme).0
+}
+
+/// The panel's rows, and which of them are the review guide section
+/// (see [`pr_info_guide_rows`]). The section follows the description.
+fn build_pr_info_rows(
+    info: &PullRequestInfo,
+    guide: Option<&ReviewGuide>,
+    width: usize,
+    theme: &Theme,
+) -> (Vec<Line<'static>>, Range<usize>) {
     let mut lines = Vec::new();
     let content_width = width.max(1);
     let details = &info.details;
@@ -213,6 +244,12 @@ pub fn build_pr_info_lines(
         &body,
         content_width,
     ));
+
+    let guide_start = lines.len();
+    if let Some(guide) = guide {
+        push_review_guide(&mut lines, guide, content_width, theme);
+    }
+    let guide_rows = guide_start..lines.len();
 
     push_blank(&mut lines);
     push_section_header(
@@ -304,7 +341,87 @@ pub fn build_pr_info_lines(
         }
     }
 
-    lines
+    (lines, guide_rows)
+}
+
+/// Steps list at most this many files; the file tree shows all of them.
+const MAX_GUIDE_STEP_FILES: usize = 6;
+
+/// The review guide as its own section: the overview, then one numbered
+/// entry per step with its files underneath.
+///
+/// Laid out here rather than handed to the markdown highlighter, which
+/// colors markup without hiding it: emphasis around every step title would
+/// show as literal asterisks.
+fn push_review_guide(
+    lines: &mut Vec<Line<'static>>,
+    guide: &ReviewGuide,
+    width: usize,
+    theme: &Theme,
+) {
+    push_blank(lines);
+    push_section_header(lines, theme, "═══ Review guide ".to_string());
+    if !guide.overview.is_empty() {
+        lines.extend(comment_panel::markdown_body_lines(
+            theme,
+            &guide.overview,
+            width,
+        ));
+    }
+    let title_style = Style::default().add_modifier(Modifier::BOLD);
+    for (idx, step) in guide.steps.iter().enumerate() {
+        if idx == 0 {
+            push_blank(lines);
+        }
+        let number = format!("{}. ", idx + 1);
+        let indent = " ".repeat(number.width());
+        let text_width = width.saturating_sub(number.width()).max(1);
+
+        let title = if step.title.is_empty() {
+            format!("Step {}", idx + 1)
+        } else {
+            step.title.clone()
+        };
+        let heading = if step.summary.is_empty() {
+            title.clone()
+        } else {
+            format!("{title} · {}", step.summary)
+        };
+        // `wrap_text` rejoins words with single spaces, so each chunk is a
+        // slice of `heading` and the title is its first `title.len()` bytes.
+        let mut consumed = 0;
+        for (row, chunk) in wrap_text(&heading, text_width).into_iter().enumerate() {
+            let prefix = if row == 0 {
+                number.clone()
+            } else {
+                indent.clone()
+            };
+            let title_len = title.len().saturating_sub(consumed).min(chunk.len());
+            consumed += chunk.len() + 1;
+            let (bold, rest) = chunk.split_at(title_len);
+            lines.push(Line::from(vec![
+                Span::styled(prefix, styles::dim_style(theme)),
+                Span::styled(bold.to_string(), title_style),
+                Span::raw(rest.to_string()),
+            ]));
+        }
+
+        let mut files: Vec<String> = step
+            .files
+            .iter()
+            .take(MAX_GUIDE_STEP_FILES)
+            .map(|path| path.display().to_string())
+            .collect();
+        if step.files.len() > MAX_GUIDE_STEP_FILES {
+            files.push(format!("+{} more", step.files.len() - MAX_GUIDE_STEP_FILES));
+        }
+        for chunk in wrap_text(&files.join(", "), text_width) {
+            lines.push(Line::from(vec![
+                Span::raw(indent.clone()),
+                Span::styled(chunk, styles::dim_style(theme)),
+            ]));
+        }
+    }
 }
 
 pub fn issue_comment_display_lines(

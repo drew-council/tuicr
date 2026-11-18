@@ -23,6 +23,7 @@ use crate::forge::traits::{
 };
 use crate::gitattributes::AttributesSnapshot;
 use crate::model::{DiffFile, FilePatch, ReviewSession, SessionDiffSource};
+use crate::review_guide::ReviewGuideLauncher;
 use crate::tuicrignore;
 use crate::vcs::diff_parser::parse_file_patches;
 
@@ -73,8 +74,19 @@ pub fn open_pull_request(
     target: PullRequestTarget,
     local_checkout: Option<&Path>,
 ) -> Result<OpenedPullRequest> {
+    open_pull_request_with_guide(backend, target, local_checkout, None)
+}
+
+/// [`open_pull_request`], also starting an AI review guide request as soon as
+/// the diff is fetched (see [`fetch_pr_data_with_guide`]).
+pub fn open_pull_request_with_guide(
+    backend: &(dyn ForgeBackend + Sync),
+    target: PullRequestTarget,
+    local_checkout: Option<&Path>,
+    guide: Option<ReviewGuideLauncher>,
+) -> Result<OpenedPullRequest> {
     let (details, patches, commits, review_metadata, pr_info, attributes) =
-        fetch_pr_data(backend, target)?;
+        fetch_pr_data_with_guide(backend, target, guide)?;
     prepare_open_pr(
         details,
         patches,
@@ -108,8 +120,21 @@ pub fn fetch_pr_data(
     backend: &(dyn ForgeBackend + Sync),
     target: PullRequestTarget,
 ) -> Result<PrFetchData> {
+    fetch_pr_data_with_guide(backend, target, None)
+}
+
+/// [`fetch_pr_data`], launching `guide` the moment the diff arrives. The guide
+/// request then runs on its own thread, overlapping the commit, review
+/// metadata, and attribute fetches and the main-thread parse, so it adds
+/// nothing to the time it takes the PR to open. A retried fetch launches
+/// again; the app drops the stale head's result by its key.
+pub fn fetch_pr_data_with_guide(
+    backend: &(dyn ForgeBackend + Sync),
+    target: PullRequestTarget,
+    guide: Option<ReviewGuideLauncher>,
+) -> Result<PrFetchData> {
     for _ in 0..2 {
-        let data = fetch_pr_data_once(backend, target.clone())?;
+        let data = fetch_pr_data_once(backend, target.clone(), guide.clone())?;
         let current = backend.get_pull_request_info(target.clone())?;
         if current.details.head_sha == data.0.head_sha {
             return Ok(data);
@@ -124,6 +149,7 @@ pub fn fetch_pr_data(
 fn fetch_pr_data_once(
     backend: &(dyn ForgeBackend + Sync),
     target: PullRequestTarget,
+    guide: Option<ReviewGuideLauncher>,
 ) -> Result<PrFetchData> {
     let mut pr_info = backend.get_pull_request_info(target)?;
     // Pin `base_sha` to the commit the displayed patch is actually taken
@@ -140,6 +166,9 @@ fn fetch_pr_data_once(
             // `.gitattributes` lookups depend on the changed paths, so they
             // follow the diff in its `join` branch.
             backend.get_pull_request_diff(&details).map(|patches| {
+                if let Some(guide) = guide {
+                    guide.launch(&pr_info, &patches);
+                }
                 let attributes = fetch_pr_attributes(backend, &details, &patches);
                 (patches, attributes)
             })

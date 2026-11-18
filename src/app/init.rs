@@ -1,11 +1,12 @@
 use super::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(in crate::app) struct PrDisplayOptions {
     pub(in crate::app) show_checks: bool,
     pub(in crate::app) show_comments: bool,
     pub(in crate::app) comments_visibility:
         Option<crate::forge::remote_comments::PrCommentsVisibility>,
+    pub(in crate::app) review_guide: Option<crate::config::ReviewGuideConfig>,
 }
 
 impl App {
@@ -30,6 +31,7 @@ impl App {
                     show_checks: options.show_pr_checks,
                     show_comments: options.show_pr_comments,
                     comments_visibility: options.pr_comments_visibility,
+                    review_guide: options.review_guide.clone(),
                 },
                 options.vcs_open_options(),
             );
@@ -566,6 +568,9 @@ impl App {
             show_bot_reviews: false,
             forge_review_threads_loading: false,
             pr_threads_rx: None,
+            review_guide_config: None,
+            review_guide: None,
+            review_guide_pending: None,
             forge_config: crate::config::ForgeConfig::default(),
             username: crate::model::comment::DEFAULT_AUTHOR.to_string(),
             submit_state: None,
@@ -796,6 +801,7 @@ impl App {
                 show_checks: false,
                 show_comments: true,
                 comments_visibility: None,
+                review_guide: None,
             },
             VcsOpenOptions::default(),
         )
@@ -819,7 +825,8 @@ impl App {
         use crate::forge::gitea::tea::parse_pull_request_target_gitea;
         use crate::forge::github::gh::{SystemGhRunner, parse_pull_request_target};
         use crate::forge::gitlab::glab::parse_pull_request_target_gitlab;
-        use crate::forge::pr_open::open_pull_request;
+        use crate::forge::pr_open::open_pull_request_with_guide;
+        use crate::review_guide::ReviewGuideLauncher;
 
         // Bitbucket first: its URL shape (`/pull-requests/<n>`) is distinct,
         // and the GitHub parser would otherwise claim the host. Gitea next:
@@ -881,10 +888,18 @@ impl App {
             display_options.show_checks,
             display_options.show_comments,
         );
-        let mut opened = open_pull_request(
+        let (guide_launcher, guide_pending) = display_options
+            .review_guide
+            .clone()
+            .map(|config| {
+                ReviewGuideLauncher::new(config, crate::review_guide::default_cache_dir())
+            })
+            .unzip();
+        let mut opened = open_pull_request_with_guide(
             backend.as_ref(),
             parsed,
             local_checkout_for_target.as_deref(),
+            guide_launcher,
         )?;
         // Seed before the persisted-session restore, which replaces the
         // fresh session wholesale, so a saved visibility always wins.
@@ -909,6 +924,7 @@ impl App {
             local_repo_root,
             vcs_open_options,
         )?;
+        app.review_guide_pending = guide_pending;
         // Spawn thread-fetch on startup; the main event loop will drain
         // the receiver via `poll_pr_threads_events` once it begins.
         app.spawn_pr_threads_fetch(&details_for_threads, local_checkout_for_target);
@@ -963,6 +979,7 @@ impl App {
         )?;
         app.show_pr_checks = display_options.show_checks;
         app.show_pr_comments = display_options.show_comments;
+        app.review_guide_config = display_options.review_guide;
         // `build` has no slot for the head's `.gitattributes` and has already
         // tagged the files without them.
         app.set_pr_attributes(attributes);

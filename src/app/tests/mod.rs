@@ -19,6 +19,7 @@ mod pr_identity_tests;
 mod pr_info_tests;
 mod redraw_tests;
 pub(in crate::app) mod render_perf_tests;
+mod review_guide_tests;
 mod sbs_comment_side_tests;
 mod scroll_behavior_tests;
 mod scroll_tests;

@@ -145,6 +145,7 @@ out to.
 | `GERRIT_USERNAME`, `GERRIT_PASSWORD` | Gerrit REST API credentials. `GERRIT_PASSWORD` must be an HTTP password, not the account password |
 | `GITLAB_SUBFOLDER` | Subfolder a self-hosted GitLab is installed under (`gitlab` for `https://example.com/gitlab/`). Read by `glab` and by tuicr, and overrides `glab`'s per-host `subfolder` setting. See [GITLAB.md](GITLAB.md) |
 | `TUICR_GLAB_DEBUG` | Log `glab` invocations for debugging. See [GITLAB.md](GITLAB.md) |
+| `TUICR_REVIEW_GUIDE_PROMPT` | Set by tuicr for the `[review_guide]` command, never read: the prompt that is also in the request's `instructions`. See [CONFIG.md](CONFIG.md#review-guide) |
 | `TMUX`, `ZELLIJ`, `SSH_TTY` | Detected to choose a clipboard path — OSC 52 over SSH, `tmux load-buffer` inside tmux |
 | `REX_SESSION` | Prefer OSC 52 clipboard writes to reach the Rex client's clipboard |
 | `TERM_PROGRAM` | When set to `rex`, prefer OSC 52 clipboard writes |
