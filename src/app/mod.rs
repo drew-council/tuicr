@@ -1441,6 +1441,14 @@ pub struct App {
     /// Background-thread channel that delivers the result of a remote draft
     /// deletion. `Receiver` is only present while one is in flight.
     pub pr_draft_delete_rx: Option<std::sync::mpsc::Receiver<PrDraftDeleteEvent>>,
+    /// `[review_guide]` settings when the AI review guide is enabled. `None`
+    /// means no guide is ever requested.
+    pub review_guide_config: Option<crate::config::ReviewGuideConfig>,
+    /// The AI review guide for an open PR head, once it has landed. Only
+    /// consulted while that head is the open review (`current_review_guide`).
+    pub(crate) review_guide: Option<review_guide::ActiveReviewGuide>,
+    /// The in-flight guide request. Dropping it stops the command.
+    pub review_guide_pending: Option<crate::review_guide::PendingReviewGuide>,
 
     /// `[forge]` section settings resolved at startup. Drives the body/footer
     /// formatting on submit. Defaults to `ForgeConfig::default()` when the
@@ -2209,6 +2217,10 @@ pub struct AppStartupOptions<'a> {
     /// `ForgeRepository`. When `Some`, the canonical resolver short-circuits
     /// the `gh api` parent lookup and uses this value directly.
     pub repo_url_override: Option<ForgeRepository>,
+    /// `[review_guide]` settings when the guide is enabled. Needed this early
+    /// because `tuicr pr <target>` fetches the PR inside `App::new`, and the
+    /// guide request starts mid-fetch.
+    pub review_guide: Option<crate::config::ReviewGuideConfig>,
 }
 
 impl AppStartupOptions<'_> {
@@ -2238,6 +2250,7 @@ mod init;
 mod modes;
 mod navigation;
 mod pr;
+mod review_guide;
 mod reviewed;
 mod search;
 mod session;

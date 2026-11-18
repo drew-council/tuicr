@@ -16,7 +16,7 @@ Workflow areas (`e2e/scenarios/<area>/<behaviour>.py`; each file's header commen
 | `export` | Markdown export of local and remote threads |
 | `syntax` | Syntax colouring, user grammars |
 | `cli` | Non-interactive CLI: `review` subcommands, flag validation, update detection, install script |
-| `pr` | GitHub PR flows: open, reload, commit selector, threads, submit, editor snapshots, selector |
+| `pr` | GitHub PR flows: open, reload, commit selector, threads, submit, editor snapshots, selector, review guide command |
 | `gerrit` | Gerrit: URL, threads, root change, HTTPS trust (reads only) |
 | `gitlab` | GitLab MR: URL/host, threads, draft read-back, submit, partial submit |
 | `gitea` | Gitea PR: pagination, votes, draft read-back, submit |

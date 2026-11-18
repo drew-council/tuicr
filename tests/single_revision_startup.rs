@@ -67,6 +67,7 @@ fn should_select_the_only_commit_when_started_with_one_revision() {
             pr_target: None,
             pr_current_branch: false,
             repo_url_override: None,
+            review_guide: None,
         },
     )
     .unwrap();

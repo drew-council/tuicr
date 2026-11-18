@@ -2209,6 +2209,7 @@ mod tests {
             pr_target: None,
             pr_current_branch: false,
             repo_url_override: None,
+            review_guide: None,
         };
         let captured = options.vcs_open_options();
         assert!(!captured.include_untracked);

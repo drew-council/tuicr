@@ -48,6 +48,7 @@ fn startup_options(working_tree: bool) -> AppStartupOptions<'static> {
         pr_target: None,
         pr_current_branch: false,
         repo_url_override: None,
+        review_guide: None,
     }
 }
 

@@ -38,6 +38,7 @@ fn file_options(path: &str) -> AppStartupOptions<'_> {
         pr_target: None,
         pr_current_branch: false,
         repo_url_override: None,
+        review_guide: None,
     }
 }
 

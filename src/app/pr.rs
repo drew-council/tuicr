@@ -173,6 +173,7 @@ impl App {
         }
         self.parked_vcs = None;
         self.pr_info = None;
+        self.review_guide_pending = None;
         self.forge_review_threads = Vec::new();
         self.set_forge_review_summaries(Vec::new());
         self.forge_review_threads_loading = false;
@@ -563,7 +564,7 @@ impl App {
     /// on a background thread. Returns immediately. The result is
     /// applied later in `poll_pr_reload_events`.
     pub fn spawn_pr_reload(&mut self) -> Result<()> {
-        use crate::forge::pr_open::fetch_pr_data;
+        use crate::forge::pr_open::fetch_pr_data_with_guide;
         use crate::forge::traits::PullRequestTarget;
 
         let DiffSource::PullRequest(current) = self.diff_source.clone() else {
@@ -605,6 +606,9 @@ impl App {
         let pr_number = current.key.number;
         let show_pr_checks = self.show_pr_checks;
         let show_pr_comments = self.show_pr_comments;
+        // Whether the head moved is unknown until the fetch returns, so always
+        // ask. A same-head reload is answered from the guide cache.
+        let guide = self.review_guide_launcher();
         std::thread::spawn(move || {
             let backend = create_forge_backend(
                 &repository,
@@ -614,7 +618,8 @@ impl App {
             );
             let target =
                 PullRequestTarget::with_repository(repository, pr_number, pr_number.to_string());
-            let outcome = fetch_pr_data(backend.as_ref(), target).map_err(|e| e.to_string());
+            let outcome = fetch_pr_data_with_guide(backend.as_ref(), target, guide)
+                .map_err(|e| e.to_string());
             let _ = tx.send(PrReloadEvent::Done {
                 request,
                 result: outcome,
@@ -1133,7 +1138,7 @@ impl App {
     /// drained in `poll_pr_open_events` where parsing happens and PR mode
     /// is entered.
     fn spawn_pr_open(&mut self, repository: &crate::forge::traits::ForgeRepository, number: u64) {
-        use crate::forge::pr_open::fetch_pr_data;
+        use crate::forge::pr_open::fetch_pr_data_with_guide;
         use crate::forge::traits::PullRequestTarget;
 
         let request = PrOpenRequest {
@@ -1159,6 +1164,7 @@ impl App {
         let local_checkout = self.local_checkout_for(repository);
         let show_pr_checks = self.show_pr_checks;
         let show_pr_comments = self.show_pr_comments;
+        let guide = self.review_guide_launcher();
         std::thread::spawn(move || {
             let backend = create_forge_backend(
                 &summary_repo,
@@ -1168,7 +1174,8 @@ impl App {
             );
             let target =
                 PullRequestTarget::with_repository(summary_repo, pr_number, pr_number.to_string());
-            let outcome = fetch_pr_data(backend.as_ref(), target).map_err(|e| e.to_string());
+            let outcome = fetch_pr_data_with_guide(backend.as_ref(), target, guide)
+                .map_err(|e| e.to_string());
             let _ = tx.send(PrOpenEvent::Done {
                 request,
                 result: outcome,

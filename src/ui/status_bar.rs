@@ -499,8 +499,8 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     // Right-aligned slot priority: active message > pr-flow spinners
-    // (submit/reload/range) > remote-comments loading hint > modified
-    // indicator. Surfaces the most important transient state without
+    // (submit/reload/range) > remote-comments loading hint > review guide
+    // in flight > modified indicator. Surfaces the most important transient state without
     // crowding the hints on the left.
     let (right_span, right_width) = if app.message.is_some() {
         build_message_span(app.message.as_ref(), theme)
@@ -553,6 +553,15 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         )
     } else if app.forge_review_threads_loading {
         let content = " loading remote comments\u{2026} ".to_string();
+        let width = content.chars().count();
+        (
+            Span::styled(content, Style::default().fg(theme.fg_dim)),
+            width,
+        )
+    } else if app.review_guide_in_flight() {
+        // Static on purpose: the command can run for a minute, and a spinner
+        // would repaint the whole diff every tick until it answers.
+        let content = " generating review guide\u{2026} ".to_string();
         let width = content.chars().count();
         (
             Span::styled(content, Style::default().fg(theme.fg_dim)),

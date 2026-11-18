@@ -246,6 +246,12 @@ fn main() -> anyhow::Result<()> {
         _ => None,
     };
 
+    let review_guide_config = config_outcome
+        .config
+        .as_ref()
+        .and_then(|cfg| cfg.review_guide.clone())
+        .filter(|guide| guide.enabled);
+
     let mut app = match profile::time("startup.app_init", || {
         App::new(
             theme,
@@ -278,6 +284,7 @@ fn main() -> anyhow::Result<()> {
                 pr_target: cli_args.pr_target.as_deref(),
                 pr_current_branch: cli_args.pr_current_branch,
                 repo_url_override,
+                review_guide: review_guide_config.clone(),
             },
         )
     }) {
@@ -285,6 +292,7 @@ fn main() -> anyhow::Result<()> {
             app.supports_keyboard_enhancement = keyboard_enhancement_supported;
             app.transparent_background = transparent;
             startup_warnings.extend(app.vcs.startup_warnings());
+            app.review_guide_config = review_guide_config.clone();
             if let Some(cfg) = config_outcome.config.as_ref() {
                 if let Some(forge_cfg) = cfg.forge.clone() {
                     app.forge_config = forge_cfg;
@@ -526,6 +534,7 @@ fn main() -> anyhow::Result<()> {
         app.poll_pr_threads_events();
         app.poll_pr_submit_events();
         app.poll_pr_draft_delete_events();
+        needs_redraw |= app.poll_review_guide_events();
         needs_redraw |= app.poll_editor_launches();
         needs_redraw |= app.poll_comment_nvim_events();
         needs_redraw |= app.poll_persisted_session_changes();

@@ -107,6 +107,11 @@ count = true
 [keys.normal]
 "<C-s>" = "submit"
 "Y" = "none"
+
+[review_guide]
+command = ["claude", "-p", "--model", "opus", "--tools", ""]  # any program; unset = no guide
+timeout_secs = 120
+prompt_file = "~/.config/tuicr/review_guide_prompt.md"  # or prompt = """..."""; default: built-in prompt
 ```
 
 ## Options
@@ -711,6 +716,99 @@ Runtime commands:
 `.gitattributes` is read from the local worktree, so this needs a git repository: mercurial and non-colocated jujutsu repos report nothing as generated (colocated jujutsu repos work), and in pull request mode the attributes come from your local checkout rather than the pull request's head; with no matching local checkout nothing is collapsed. Detection also quietly finds nothing when libgit2 cannot open the repository, for example one using the reftable ref format or the `relativeworktrees` extension. Attributes are re-read on reload (`:e`), so editing `.gitattributes` mid-session takes effect without a restart.
 
 To hide files from a review entirely rather than collapse them, use `.tuicrignore` below.
+
+## Review guide
+
+Settings under the `[review_guide]` section turn on an AI review guide for pull requests. When a pull request opens, tuicr runs `command`, writes a JSON request to its stdin, and reads a JSON guide from its stdout. The guide groups the changed files into ordered review steps and adds a short overview. tuicr does not talk to a model itself. The command is any program that can answer the request, usually the headless mode of a coding agent.
+
+The command starts as soon as the diff has been fetched and runs in the background, so the pull request opens at the usual speed in directory order. The status bar shows `generating review guide…` until it answers. When the guide lands, the file tree and diff reorder to follow it, and a `Review guide` section with the overview and the numbered steps appears under the PR description. The file tree stays a directory tree: each directory is placed by the earliest step among its files. A guide that arrives while a comment, prompt, or popup is open waits until it closes. Guides are cached per pull request head, so reopening the same head runs nothing. A failed command leaves the default order and shows a warning with the last line of its stderr.
+
+```toml
+[review_guide]
+command = ["claude", "-p", "--model", "opus", "--effort", "low", "--tools", "", "--strict-mcp-config", "--no-session-persistence"]
+prompt_file = "~/.config/tuicr/review_guide_prompt.md"
+```
+
+| Key            | Default  | Description                                                                                                                                             |
+| -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `command`      | (unset)  | Program and arguments as an array of strings. Run as given, without a shell. A leading `~/` in the program expands to the home directory. Required.    |
+| `enabled`      | `true`   | Set to `false` to keep the section but stop running the command.                                                                                        |
+| `timeout_secs` | `120`    | Kill the command and give up after this many seconds.                                                                                                   |
+| `prompt`       | built-in | Inline instructions that tell the model how to order and summarize files.                                                                               |
+| `prompt_file`  | (unset)  | Path to a text file holding the prompt. `prompt` wins when both are set. A leading `~/` expands to the home directory. Read once, when tuicr starts.    |
+
+### Command contract
+
+The command runs in tuicr's working directory with tuicr's environment, plus `TUICR_REVIEW_GUIDE_PROMPT`. It MUST exit 0 and print the guide on stdout. Anything on stderr is ignored unless the command fails. tuicr kills the command, and any process it started, when the timeout passes or the pull request is closed or reloaded.
+
+**stdin** is one JSON object:
+
+```json
+{
+  "version": 1,
+  "instructions": "<your prompt>\n\n## Response format\n\nAnswer with one JSON object ...",
+  "pull_request": {
+    "url": "https://github.com/owner/repo/pull/7",
+    "repository": "owner/repo",
+    "number": 7,
+    "title": "Add users",
+    "description": "Adds a user service.",
+    "author": "alice",
+    "base_ref": "main",
+    "head_ref": "users",
+    "head_sha": "abc123..."
+  },
+  "files": [
+    { "path": "src/user.rs", "status": "modified", "patch": "@@ -1 +1 @@\n-a\n+b\n" },
+    { "path": "src/new.rs", "old_path": "src/old.rs", "status": "renamed", "patch": "..." },
+    { "path": "logo.png", "status": "added", "binary": true }
+  ]
+}
+```
+
+`instructions` is the configured prompt followed by tuicr's description of the response format, so the request is complete on its own: a harness that takes its prompt from stdin needs no wrapper script. `TUICR_REVIEW_GUIDE_PROMPT` holds the same text, for a script that wants to pass it as a system prompt instead. `status` is `added`, `modified`, `deleted`, `renamed`, or `copied`. tuicr sends at most 12 kB of patch per file and 240 kB in total; a file whose patch was cut or left out has `"truncated": true`, and every path is always listed.
+
+**stdout** is one JSON object:
+
+```json
+{
+  "overview": "- Adds a user service behind a protobuf API.\n- Risk: no migration for existing rows.",
+  "steps": [
+    { "title": "API contract", "summary": "New UserService RPCs.", "files": ["api/user.proto"] },
+    { "title": "Implementation", "summary": "", "files": ["src/user.rs", "src/user_test.rs"] }
+  ]
+}
+```
+
+`steps` and the `files` inside each step are in reading order. `overview`, `title`, and `summary` are optional. Parsing is lenient about everything around the object, because agents rarely print bare JSON: a code fence, prose before or after it, or a harness's own JSON envelope with the guide nested inside are all accepted. tuicr then reconciles the answer with the pull request: unknown paths are dropped, a repeated path keeps its first step, and files the answer left out go into a final `Other changes` step.
+
+The command, the prompt, and the pull request head make up the cache key, so changing the command or the prompt requests fresh guides.
+
+### Examples
+
+Claude Code, lean enough to answer in a few seconds (no tools, no MCP servers, no saved session):
+
+```toml
+command = ["claude", "-p", "--model", "opus", "--effort", "low", "--tools", "", "--strict-mcp-config", "--no-session-persistence"]
+```
+
+pi:
+
+```toml
+command = ["pi", "-p", "--no-tools", "--no-session", "--no-skills", "--no-context-files"]
+```
+
+A wrapper script, when the harness needs the prompt somewhere other than stdin or its output needs unwrapping:
+
+```toml
+command = ["~/.config/tuicr/review-guide.sh"]
+```
+
+```sh
+#!/bin/sh
+# The prompt as the system prompt; the request on stdin becomes the user message.
+exec claude -p --system-prompt "$TUICR_REVIEW_GUIDE_PROMPT" --model sonnet --tools ""
+```
 
 ## .tuicrignore
 

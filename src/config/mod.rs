@@ -113,6 +113,36 @@ impl Default for ForgeConfig {
     }
 }
 
+/// `[review_guide]` section: an AI-generated review order and overview for
+/// pull requests, produced by a user-supplied command (`src/review_guide`).
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct ReviewGuideConfig {
+    /// Run the command whenever a pull request opens.
+    /// Forced off when `command` is empty.
+    pub enabled: bool,
+    /// Program and arguments, run as given (no shell).
+    /// A leading `~/` in the program expands to the home directory.
+    pub command: Vec<String>,
+    /// Give up on the command after this many seconds.
+    pub timeout_secs: u64,
+    /// How to order and summarize files. Set from `prompt` (inline) or
+    /// `prompt_file` (read at config load). `None` uses
+    /// `review_guide::DEFAULT_PROMPT`.
+    pub prompt: Option<String>,
+}
+
+impl Default for ReviewGuideConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            command: Vec::new(),
+            timeout_secs: 120,
+            prompt: None,
+        }
+    }
+}
+
 const DEFAULT_EXPORT_INTRO: &str =
     "I reviewed your code and have the following comments. Please address them.";
 const DEFAULT_EXPORT_COMMENTS_HEADER: &str = "## Local tuicr Comments";
@@ -338,6 +368,8 @@ pub struct AppConfig {
     /// `[keys.<context>]` bindings, applied over the built-in keymap.
     #[serde(skip)]
     pub keys: Vec<Binding>,
+    /// `[review_guide]` section settings. `None` when the section is absent.
+    pub review_guide: Option<ReviewGuideConfig>,
 }
 
 impl AppConfig {
@@ -409,9 +441,18 @@ const KNOWN_KEYS: &[&str] = &[
     "export",
     "generated",
     "keys",
+    "review_guide",
 ];
 
 const FORGE_KNOWN_KEYS: &[&str] = &["comment_type_prefix", "comment_type_format", "pr_search"];
+
+const REVIEW_GUIDE_KNOWN_KEYS: &[&str] = &[
+    "enabled",
+    "command",
+    "timeout_secs",
+    "prompt",
+    "prompt_file",
+];
 
 const EXPORT_KNOWN_KEYS: &[&str] = &[
     "intro",
@@ -880,6 +921,9 @@ fn load_config_from_path(path: &Path) -> Result<ConfigLoadOutcome> {
             .get("keys")
             .map(|v| parse_keys(v, &mut warnings))
             .unwrap_or_default(),
+        review_guide: table
+            .get("review_guide")
+            .and_then(|v| parse_review_guide(v, &mut warnings)),
     };
 
     for key in table.keys() {
@@ -1061,6 +1105,114 @@ fn parse_generated(value: &Value, warnings: &mut Vec<String>) -> Option<Generate
     } else {
         Some(cfg)
     }
+}
+
+/// Parse the `[review_guide]` section. Unset keys keep their defaults; an
+/// invalid value warns and keeps the default too.
+fn parse_review_guide(value: &Value, warnings: &mut Vec<String>) -> Option<ReviewGuideConfig> {
+    const SECTION: &str = "review_guide";
+    let Some(table) = value.as_table() else {
+        warnings
+            .push("Warning: Config key 'review_guide' must be a table; ignoring value".to_string());
+        return None;
+    };
+
+    for key in table.keys() {
+        if !REVIEW_GUIDE_KNOWN_KEYS.contains(&key.as_str()) {
+            warnings.push(format!(
+                "Warning: Unknown config key 'review_guide.{key}', ignoring"
+            ));
+        }
+    }
+
+    let mut cfg = ReviewGuideConfig::default();
+    if let Some(enabled) = read_section_bool(table, SECTION, "enabled", warnings) {
+        cfg.enabled = enabled;
+    }
+    if let Some(command) = table.get("command") {
+        let argv: Option<Vec<String>> = command.as_array().and_then(|items| {
+            items
+                .iter()
+                .map(|item| item.as_str().map(str::to_string))
+                .collect()
+        });
+        match argv {
+            Some(mut argv) if argv.first().is_some_and(|program| !program.trim().is_empty()) => {
+                argv[0] = expand_home(argv[0].trim()).to_string_lossy().into_owned();
+                cfg.command = argv;
+            }
+            _ => warnings.push(
+                "Warning: Config key 'review_guide.command' must be a non-empty array of strings (program, then arguments); ignoring value"
+                    .to_string(),
+            ),
+        }
+    }
+    if let Some(timeout) = table.get("timeout_secs") {
+        match timeout.as_integer() {
+            Some(secs) if secs > 0 => cfg.timeout_secs = secs as u64,
+            _ => warnings.push(
+                "Warning: Config key 'review_guide.timeout_secs' must be a positive integer; ignoring value"
+                    .to_string(),
+            ),
+        }
+    }
+    let inline_prompt = read_section_string(table, SECTION, "prompt", warnings)
+        .filter(|prompt| !prompt.trim().is_empty());
+    let prompt_file = read_section_string(table, SECTION, "prompt_file", warnings)
+        .filter(|path| !path.trim().is_empty())
+        .map(|path| expand_home(path.trim()));
+    if inline_prompt.is_some() && prompt_file.is_some() {
+        warnings.push(
+            "Warning: Config keys 'review_guide.prompt' and 'review_guide.prompt_file' are both set; using 'prompt'"
+                .to_string(),
+        );
+    }
+    cfg.prompt = match (inline_prompt, prompt_file) {
+        (Some(prompt), _) => Some(prompt),
+        (None, Some(path)) => match std::fs::read_to_string(&path) {
+            Ok(contents) if !contents.trim().is_empty() => Some(contents),
+            Ok(_) => {
+                warnings.push(format!(
+                    "Warning: Config key 'review_guide.prompt_file' names an empty file ({}); using the built-in prompt",
+                    path.display()
+                ));
+                None
+            }
+            Err(err) => {
+                warnings.push(format!(
+                    "Warning: Config key 'review_guide.prompt_file' could not be read ({}): {err}; using the built-in prompt",
+                    path.display()
+                ));
+                None
+            }
+        },
+        (None, None) => None,
+    };
+    if cfg.enabled && cfg.command.is_empty() {
+        if !table.contains_key("command") {
+            warnings.push(
+                "Warning: Config section 'review_guide' needs 'command'; the review guide stays off"
+                    .to_string(),
+            );
+        }
+        cfg.enabled = false;
+    }
+
+    Some(cfg)
+}
+
+/// Expand a leading `~/` (or a bare `~`) to the home directory.
+fn expand_home(path: &str) -> PathBuf {
+    let home = || directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf());
+    if path == "~" {
+        return home().unwrap_or_else(|| PathBuf::from(path));
+    }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = home()
+    {
+        return home.join(rest);
+    }
+    PathBuf::from(path)
 }
 
 /// Like `read_bool`, but emits a `<section>.<key>` qualified warning so the
@@ -2819,6 +2971,170 @@ comment_type_prefix = false
             None
         );
         assert!(outcome.warnings.is_empty());
+    }
+
+    #[test]
+    fn should_parse_review_guide_section() {
+        let outcome = parse_config(
+            r#"[review_guide]
+command = ["claude", "-p", "--model", "opus", "--tools", ""]
+timeout_secs = 30
+prompt = "Order files."
+"#,
+        );
+        let guide = outcome
+            .config
+            .and_then(|cfg| cfg.review_guide)
+            .expect("review_guide section should parse");
+        assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+        assert_eq!(
+            guide,
+            ReviewGuideConfig {
+                enabled: true,
+                command: ["claude", "-p", "--model", "opus", "--tools", ""]
+                    .map(String::from)
+                    .to_vec(),
+                timeout_secs: 30,
+                prompt: Some("Order files.".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn should_enable_review_guide_with_only_a_command() {
+        let outcome = parse_config("[review_guide]\ncommand = [\"guide\"]\n");
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+        assert!(guide.enabled);
+        assert_eq!(guide.prompt, None);
+        assert_eq!(guide.timeout_secs, 120);
+    }
+
+    #[test]
+    fn should_let_enabled_false_switch_a_configured_review_guide_off() {
+        let outcome = parse_config("[review_guide]\nenabled = false\ncommand = [\"guide\"]\n");
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+        assert!(!guide.enabled);
+        assert_eq!(guide.command, ["guide"]);
+    }
+
+    #[test]
+    fn should_warn_and_stay_off_without_a_review_guide_command() {
+        let outcome = parse_config("[review_guide]\nprompt = \"p\"\n");
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert!(!guide.enabled);
+        assert_eq!(outcome.warnings.len(), 1, "{:?}", outcome.warnings);
+        assert!(outcome.warnings[0].contains("needs 'command'"));
+    }
+
+    #[test]
+    fn should_reject_a_review_guide_command_that_is_not_an_argv() {
+        for command in ["\"claude -p\"", "[]", "[\"\"]", "[\"claude\", 3]"] {
+            let outcome = parse_config(&format!("[review_guide]\ncommand = {command}\n"));
+            let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+            assert!(!guide.enabled, "{command}");
+            assert!(guide.command.is_empty(), "{command}");
+            assert_eq!(
+                outcome.warnings.len(),
+                1,
+                "{command}: {:?}",
+                outcome.warnings
+            );
+            assert!(outcome.warnings[0].contains("review_guide.command"));
+        }
+    }
+
+    #[test]
+    fn should_expand_home_in_the_review_guide_program_only() {
+        let outcome = parse_config("[review_guide]\ncommand = [\"~/bin/guide\", \"~/arg\"]\n");
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert!(Path::new(&guide.command[0]).is_absolute());
+        assert!(guide.command[0].ends_with("bin/guide"));
+        assert_eq!(guide.command[1], "~/arg");
+    }
+
+    #[test]
+    fn should_read_review_guide_prompt_inline() {
+        let outcome = parse_config(
+            "[review_guide]\ncommand = [\"guide\"]\nprompt = \"\"\"\nOrder files alphabetically.\n\"\"\"\n",
+        );
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert!(outcome.warnings.is_empty());
+        assert_eq!(
+            guide.prompt.as_deref(),
+            Some("Order files alphabetically.\n")
+        );
+    }
+
+    #[test]
+    fn should_read_review_guide_prompt_from_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prompt.txt");
+        std::fs::write(&path, "Tests right after their source file.\n").unwrap();
+        let outcome = parse_config(&format!(
+            "[review_guide]\ncommand = [\"guide\"]\nprompt_file = {:?}\n",
+            path.display().to_string()
+        ));
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+        assert_eq!(
+            guide.prompt.as_deref(),
+            Some("Tests right after their source file.\n")
+        );
+    }
+
+    #[test]
+    fn should_warn_and_use_the_built_in_prompt_when_prompt_file_is_missing() {
+        let outcome = parse_config(
+            "[review_guide]\ncommand = [\"guide\"]\nprompt_file = \"/nonexistent/tuicr-prompt.txt\"\n",
+        );
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert_eq!(guide.prompt, None);
+        assert!(guide.enabled);
+        assert!(
+            outcome
+                .warnings
+                .iter()
+                .any(|w| w.contains("review_guide.prompt_file"))
+        );
+    }
+
+    #[test]
+    fn should_prefer_inline_prompt_over_prompt_file() {
+        let outcome = parse_config(
+            "[review_guide]\ncommand = [\"guide\"]\nprompt = \"inline\"\nprompt_file = \"/nonexistent/x.txt\"\n",
+        );
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert_eq!(guide.prompt.as_deref(), Some("inline"));
+        assert!(outcome.warnings.iter().any(|w| w.contains("both set")));
+    }
+
+    #[test]
+    fn should_warn_on_invalid_review_guide_values_and_keep_defaults() {
+        let outcome = parse_config(
+            r#"[review_guide]
+enabled = "yes"
+command = ["guide"]
+timeout_secs = 0
+bogus = 1
+"#,
+        );
+        let guide = outcome.config.and_then(|cfg| cfg.review_guide).unwrap();
+        assert_eq!(
+            guide,
+            ReviewGuideConfig {
+                command: vec!["guide".to_string()],
+                ..ReviewGuideConfig::default()
+            }
+        );
+        assert_eq!(outcome.warnings.len(), 3, "{:?}", outcome.warnings);
+        assert!(
+            outcome
+                .warnings
+                .iter()
+                .any(|w| w.contains("review_guide.bogus"))
+        );
     }
 
     #[test]
