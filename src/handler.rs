@@ -422,7 +422,14 @@ fn confirm_quit(app: &mut App) {
     if app.input_mode != InputMode::Normal {
         app.should_quit = true;
     } else if app.dirty && app.session.has_comments() && !app.quit_warned {
-        app.set_sticky_warning("Unsaved changes. Press q again to quit.");
+        let context = app.key_context().unwrap_or(KeyContext::Normal);
+        // Under `q_quits` the quit key is the one bound to the hint.
+        let quit_key = [Action::ConfirmQuit, Action::QuitHint]
+            .into_iter()
+            .find(|action| app.keymap.sequences_for(context, action).next().is_some())
+            .unwrap_or(Action::ConfirmQuit);
+        let key = app.keymap.label(context, &[quit_key], app.leader_key);
+        app.set_sticky_warning(format!("Unsaved changes. Press {key} again to quit."));
         app.quit_warned = true;
     } else if app.dirty && !app.session.has_comments() {
         app.discard_session_and_quit();

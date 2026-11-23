@@ -81,10 +81,11 @@ pub fn render_theme_picker(frame: &mut Frame, app: &mut App) {
         frame.render_stateful_widget(list, list_area, &mut app.theme_picker.list_state);
     }
 
+    let hints = crate::ui::status_bar::key_hints(app, crate::input::KeyContext::ThemePicker);
     let footer = if filtering {
         "type to filter \u{00b7} \u{21b5} apply filter \u{00b7} esc cancel filter"
     } else {
-        "j/k move \u{00b7} \u{21b5} apply \u{00b7} / filter \u{00b7} esc cancel"
+        hints.trim_start()
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(

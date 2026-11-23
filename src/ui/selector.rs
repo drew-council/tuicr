@@ -11,6 +11,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::app::{App, TargetTab, sessions_tab};
 use crate::forge::selector::{PrTabStatus, PrTabView};
 use crate::forge::traits::PullRequestListScope;
+use crate::input::{Action, KeyContext};
 use crate::ui::commit_row::{
     CURSOR_GLYPH, CommitRowSpec, format_relative_short, render_commit_row,
 };
@@ -611,32 +612,51 @@ fn render_target_selector_footer(frame: &mut Frame, app: &App, area: Rect) {
     let hints = if app.message.is_some() {
         String::new()
     } else {
+        let down_up = [Action::CursorDown(1), Action::CursorUp(1)];
+        let hints =
+            |items: &[(&[Action], &str)]| status_bar::hint_line(app, KeyContext::Targets, items);
         match app.target_tab {
             TargetTab::Local => {
-                "   j/k navigate \u{00b7} space range \u{00b7} \u{21b5} confirm \u{00b7} :q quit"
-                    .to_string()
+                let keys = hints(&[
+                    (&down_up, "navigate"),
+                    (&[Action::ToggleSelect], "range"),
+                    (&[Action::Select], "confirm"),
+                ]);
+                format!("{keys} · :q quit")
             }
             TargetTab::PullRequests => {
-                // Name the scope `r` switches to next, which depends on
+                // Name the scope the key switches to next, which depends on
                 // the scopes the forge supports.
                 let next_scope = app
                     .pr_tab
                     .repository()
                     .map(|repo| app.pr_tab.scope().next_for(repo.kind))
                     .unwrap_or(PullRequestListScope::ReviewRequested);
-                let scope_hint = match next_scope {
-                    PullRequestListScope::Open => "r all PRs".to_string(),
-                    other => format!("r {}", app.pr_scope_label(other)),
+                let scope = match next_scope {
+                    PullRequestListScope::Open => "all PRs".to_string(),
+                    other => app.pr_scope_label(other).to_string(),
                 };
-                format!("   j/k navigate · ↵ open · {scope_hint} · / filter · esc back")
+                hints(&[
+                    (&down_up, "navigate"),
+                    (&[Action::Select], "open"),
+                    (&[Action::TogglePrReviewRequestedFilter], &scope),
+                    (&[Action::EnterSearchMode], "filter"),
+                    (&[Action::ExitMode], "back"),
+                ])
             }
             TargetTab::Sessions => {
-                let empty_hint = if app.sessions_tab.show_empty() {
-                    "a hide empty"
+                let empty = if app.sessions_tab.show_empty() {
+                    "hide empty"
                 } else {
-                    "a show empty"
+                    "show empty"
                 };
-                format!("   j/k navigate · ↵ resume · dd delete · {empty_hint} · esc back")
+                hints(&[
+                    (&down_up, "navigate"),
+                    (&[Action::Select], "resume"),
+                    (&[Action::SessionsTabDelete], "delete"),
+                    (&[Action::SessionsTabToggleShowEmpty], empty),
+                    (&[Action::ExitMode], "back"),
+                ])
             }
         }
     };

@@ -563,12 +563,63 @@ impl Keymap {
             .map(|(keys, action)| (keys.as_slice(), action))
     }
 
+    /// Key sequences bound to `action` in `context`.
+    pub fn sequences_for<'a>(
+        &'a self,
+        context: KeyContext,
+        action: &'a Action,
+    ) -> impl Iterator<Item = &'a [KeyChord]> {
+        self.bindings(context)
+            .filter(move |(_, bound)| *bound == action)
+            .map(|(keys, _)| keys)
+    }
+
     /// Display strings of the keys bound to `action` in `context`.
     pub fn keys_for(&self, context: KeyContext, action: &Action) -> Vec<String> {
-        self.bindings(context)
-            .filter(|(_, bound)| *bound == action)
-            .map(|(keys, _)| display_sequence(keys))
+        self.sequences_for(context, action)
+            .map(display_sequence)
             .collect()
+    }
+
+    /// A compact label for the keys running `actions` in `context`, for help
+    /// and hints: every key of a single action (`c/Enter`), or the first key
+    /// of each of several (`j/k`). A leading whitespace leader shows as `␣`.
+    pub fn label(&self, context: KeyContext, actions: &[Action], leader: char) -> String {
+        let show = |keys: &[KeyChord]| match keys.split_first() {
+            Some((first, rest)) if leader.is_whitespace() && *first == KeyChord::char(leader) => {
+                format!("\u{2423}{}", display_sequence(rest))
+            }
+            _ => display_sequence(keys),
+        };
+        let mut parts: Vec<String> = match actions {
+            [action] => {
+                let mut sequences: Vec<&[KeyChord]> = self.sequences_for(context, action).collect();
+                // Lowercase before its capital, characters before named keys.
+                sequences.sort_by_key(|keys| {
+                    let first = keys[0];
+                    (
+                        first.plain_char().is_none(),
+                        first.plain_char().is_some_and(char::is_uppercase),
+                    )
+                });
+                sequences.into_iter().map(show).collect()
+            }
+            _ => actions
+                .iter()
+                .filter_map(|action| self.sequences_for(context, action).next().map(show))
+                .collect(),
+        };
+        if parts.is_empty() {
+            return "\u{2014}".to_string();
+        }
+        for prefix in ["Ctrl-", "Alt-"] {
+            if parts.len() > 1 && parts.iter().all(|part| part.starts_with(prefix)) {
+                for part in parts.iter_mut().skip(1) {
+                    part.drain(..prefix.len());
+                }
+            }
+        }
+        parts.join("/")
     }
 
     fn lookup(&self, context: KeyContext, keys: &[KeyChord]) -> Resolution {
@@ -997,6 +1048,27 @@ mod tests {
         );
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("unknown key <Nope>"), "{warnings:?}");
+    }
+
+    #[test]
+    fn should_label_keys_compactly() {
+        let keymap = defaults();
+        let label = |context, actions: &[Action]| keymap.label(context, actions, ';');
+        assert_eq!(label(K::Diff, &[A::CursorDown(1), A::CursorUp(1)]), "j/k");
+        assert_eq!(
+            label(K::Diff, &[A::ScrollViewDown(1), A::ScrollViewUp(1)]),
+            "Ctrl-e/y"
+        );
+        assert_eq!(label(K::Visual, &[A::ExitMode]), "v/V/Esc");
+        assert_eq!(
+            label(K::Diff, &[A::FocusPaneLeft, A::FocusPaneRight]),
+            ";h/;l"
+        );
+        assert_eq!(label(K::Diff, &[A::SubmitPicker]), "\u{2014}");
+        assert_eq!(
+            Keymap::with_defaults(' ').label(K::Diff, &[A::ToggleFileList], ' '),
+            "\u{2423}e"
+        );
     }
 
     #[test]
