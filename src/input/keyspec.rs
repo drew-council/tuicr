@@ -41,6 +41,22 @@ impl KeyChord {
         }
     }
 
+    /// How a key written in `[keys]` matches.
+    /// A bare character other than a lowercase letter or digit, and Shift-Tab,
+    /// accept any modifiers: terminals disagree on reporting Shift for them,
+    /// and the built-in bindings for those keys already match that way.
+    pub fn loosened(mut self) -> Self {
+        let shift_varies = match self.code {
+            KeyCode::Char(c) => !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != ' ',
+            KeyCode::BackTab => true,
+            _ => false,
+        };
+        if shift_varies && self.modifiers.is_empty() {
+            self.any_modifiers = true;
+        }
+        self
+    }
+
     /// Whether this bound key accepts the key `pressed`.
     pub fn accepts(&self, pressed: &KeyChord) -> bool {
         self.code == pressed.code && (self.any_modifiers || self.modifiers == pressed.modifiers)

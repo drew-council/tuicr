@@ -103,6 +103,10 @@ code_context = false
 [generated]
 collapse = true
 count = true
+
+[keys.normal]
+"<C-s>" = "submit"
+"Y" = "none"
 ```
 
 ## Options
@@ -131,11 +135,12 @@ count = true
 | `show_reviewed`            | `true`       | Whether files already marked reviewed appear in the file tree and the diff. Set `false` to start a session showing only what is left. Toggle with `:set reviewed!`. |
 | `mouse`                    | `true`       | Wheel scrolling, clicks, and drag-to-select.                                                                                                               |
 | `mouse_scroll_lines`       | `3`          | Lines scrolled per mouse wheel tick in the diff, file list, comment list, help, and summary views; the commit list moves its cursor this many rows. Must be between 1 and 100; other values are ignored with a startup warning. |
-| `leader`                   | `;`          | Single-character prefix for panel focus, sidebar toggles, and review-comment shortcuts. Invalid multi-character values are ignored with a startup warning. |
+| `leader`                   | `;`          | Single-character prefix for panel focus, sidebar toggles, and review-comment shortcuts, written `<leader>` in [`[keys]`](#keys). Invalid multi-character values are ignored with a startup warning. |
 | `editor`                   | `$EDITOR`    | Editor command for the `e` / `:edit` handoff, split with shell-like quoting rules (e.g. `"code -w"`). Falls back to `$EDITOR`, then `vi`. |
 | `comment_vim`              | `false`      | Vim modal editing in the comment box; toggle at runtime with `:vim`. When off, default emacs/readline bindings.                                            |
-| `q_quits`                  | `false`      | Restore bare `q` as a quit key in review modes. `:q`, `ZZ`, and `ZQ` work regardless of this setting.                                                     |
+| `q_quits`                  | `false`      | Restore bare `q` as a quit key in review modes. `:q`, `ZZ`, and `ZQ` work regardless of this setting. Shorthand for binding `q = "confirm-quit"` in [`[keys]`](#keys). |
 | `copy_on_quit`             | `"ask"`      | Whether `:wq`, `:x`, and `ZZ` copy the review to the clipboard when comments exist. `"ask"` prompts on `:wq`/`:x` and copies on `ZZ`; `"always"` copies without asking; `"never"` saves and quits without copying (for workflows that hand comments off with `tuicr review`). `--stdout` always exports. |
+| `keys`                     | (none)       | Key bindings per context. See [Keys](#keys).                                                                                                               |
 | `comment_tab_width`        | `4`          | Spaces inserted by Tab while typing in the vim comment box (Insert mode).                                                                                  |
 | `wrap`                     | `false`      | Line wrap in the diff view. Toggle with `:set wrap!`.                                                                                                      |
 | `wrap_style`               | `flow`       | Where wrapped unified diff rows continue: `flow` wraps from the left edge, `gutter` keeps wrapped content after the line-number gutter, leaving continuation rows without a line number or change bar. |
@@ -164,6 +169,219 @@ The default `libgit2` backend uses patience diff and the indent heuristic to
 keep changes aligned with code blocks. Set `backend = "cli"` to use Git's diff
 output and its configured diff algorithm. These choices affect local Git
 reviews; pull-request diffs come from the forge.
+
+## Keys
+
+`[keys.<context>]` tables rebind keys. Each entry maps a key sequence to an
+action name, or to `"none"` to remove a binding.
+
+```toml
+[keys.normal]
+"<C-s>" = "submit"
+"<leader>w" = "toggle-wrap"
+"Y" = "none"
+
+[keys.file-tree]
+"H" = "toggle-show-reviewed"
+```
+
+### Key notation
+
+Key sequences use Vim notation. Plain characters stand for themselves, and
+several in a row form a sequence. Everything else goes in `<...>`.
+
+| Form       | Meaning                             | Examples                |
+| ---------- | ----------------------------------- | ----------------------- |
+| Plain text | Literal characters or a sequence    | `j`, `G`, `{`, `zz`     |
+| `C-`       | Ctrl modifier inside `<...>`        | `<C-d>`                 |
+| `A-`, `M-` | Alt modifier inside `<...>`         | `<A-x>`                 |
+| `S-`       | Shift modifier inside `<...>`       | `<S-Tab>`               |
+| `<lt>`     | Literal `<`                         | `<lt>`                  |
+| `<leader>` | The key set by [`leader`](#options) | `<leader>w`             |
+| `<Name>`   | Named key, case-insensitive         | `<Esc>`, `<CR>`, `<F5>` |
+
+Write a shifted character as the character itself (`G`, `{`), not `<S-g>`. You
+can combine modifier prefixes inside `<...>`.
+
+A bare uppercase letter or symbol, and `<S-Tab>`, match with any modifiers held,
+because terminals differ in whether they report Shift for them. Lowercase
+letters, digits, and named keys match exactly the modifiers written.
+
+Named keys are `Esc`, `Enter` (also `CR`, `Return`), `Tab`, `Backspace` (also
+`BS`), `Delete` (also `Del`), `Insert`, `Up`, `Down`, `Left`, `Right`, `Home`,
+`End`, `PageUp`, `PageDown`, `Space`, and `F1` to `F24`.
+
+### Contexts
+
+A binding in a more specific context wins over the same key sequence in a parent
+context. A config binding wins over a built-in binding in the same context.
+
+| Context           | Inherits | Active when                                         |
+| ----------------- | -------- | --------------------------------------------------- |
+| `global`          | (none)   | Always, even while typing (single keys only)        |
+| `normal`          | `global` | Any review pane                                     |
+| `diff`            | `normal` | The diff is focused                                 |
+| `file-tree`       | `normal` | The file tree is focused                            |
+| `comments`        | `normal` | The comment navigator is focused                    |
+| `commits`         | `normal` | The inline commit selector is focused               |
+| `visual`          | `global` | Visual selection                                    |
+| `summary`         | `global` | The `:summary` list                                 |
+| `help`            | `global` | The help screen                                     |
+| `messages`        | `global` | The `:messages` error view                          |
+| `confirm`         | `global` | A yes/no dialog                                     |
+| `targets`         | `global` | The review target selector (commits, PRs, sessions) |
+| `theme-picker`    | `global` | The `:theme` picker                                 |
+| `file-picker`     | `global` | The `<leader>p` file picker                         |
+| `submit-picker`   | `global` | The bare `:submit` action picker                    |
+| `submit-resolver` | `global` | The unmappable-comments step of `:submit`           |
+| `submit-confirm`  | `global` | The final `:submit` confirmation                    |
+
+Typing in the `:` line, a `/` search, a filter prompt, or the comment box uses
+fixed editing keys and is not configurable.
+
+There are no key timeouts. A key cannot both run an action and start a longer
+sequence in the same context, so binding `d` removes `dd`. tuicr warns at
+startup when a binding displaces another. Bind the displaced sequence to
+`"none"` to silence the warning. `Ctrl-c` always exits and cannot be rebound.
+
+A `{N}` count typed before a key in a review pane multiplies moves and scrolls,
+repeats file and hunk jumps, and turns `go-to-bottom` into a jump to line `N`.
+
+### Actions
+
+You can bind any action in any context. Some only apply in specific contexts,
+such as `toggle-select` in lists and `comment-range` in visual selection.
+
+| Action                    | Description                                                        | Command                         |
+| ------------------------- | ------------------------------------------------------------------ | ------------------------------- |
+| `cursor-down`             | Move down                                                          |                                 |
+| `cursor-up`               | Move up                                                            |                                 |
+| `scroll-view-down`        | Scroll view down                                                   |                                 |
+| `scroll-view-up`          | Scroll view up                                                     |                                 |
+| `half-page-down`          | Half page down                                                     |                                 |
+| `half-page-up`            | Half page up                                                       |                                 |
+| `page-down`               | Full page down                                                     |                                 |
+| `page-up`                 | Full page up                                                       |                                 |
+| `scroll-left`             | Scroll left                                                        |                                 |
+| `scroll-right`            | Scroll right                                                       |                                 |
+| `go-to-top`               | Go to top                                                          |                                 |
+| `go-to-bottom`            | Go to bottom ({N} jumps to line N)                                 |                                 |
+| `go-to-line`              | Go to new-side line {N}                                            |                                 |
+| `go-to-old-line`          | Go to old-side line {N}                                            |                                 |
+| `next-file`               | Next file                                                          |                                 |
+| `prev-file`               | Previous file                                                      |                                 |
+| `next-hunk`               | Next hunk                                                          |                                 |
+| `prev-hunk`               | Previous hunk                                                      |                                 |
+| `next-comment`            | Next comment                                                       |                                 |
+| `prev-comment`            | Previous comment                                                   |                                 |
+| `next-commit`             | Show next commit                                                   |                                 |
+| `prev-commit`             | Show previous commit                                               |                                 |
+| `center-cursor`           | Center the cursor line                                             |                                 |
+| `cursor-to-top`           | Scroll the cursor line to the top                                  |                                 |
+| `cursor-to-bottom`        | Scroll the cursor line to the bottom                               |                                 |
+| `focus-next`              | Focus next pane                                                    |                                 |
+| `focus-prev`              | Focus previous pane                                                |                                 |
+| `focus-left`              | Focus the pane to the left                                         |                                 |
+| `focus-right`             | Focus the pane to the right                                        |                                 |
+| `focus-up`                | Focus the pane above                                               |                                 |
+| `focus-down`              | Focus the pane below                                               |                                 |
+| `toggle-file-list`        | Show or hide the file list                                         |                                 |
+| `select`                  | Open or activate the item under the cursor                         |                                 |
+| `select-full`             | Expand the whole gap under the cursor                              |                                 |
+| `toggle-select`           | Toggle the item under the cursor                                   |                                 |
+| `toggle-expand`           | Toggle directory or gap                                            |                                 |
+| `expand-all`              | Expand all directories                                             |                                 |
+| `collapse-all`            | Collapse all directories                                           |                                 |
+| `filter-include`          | Include files matching a regex                                     |                                 |
+| `filter-exclude`          | Exclude files matching a regex                                     |                                 |
+| `clear-include`           | Clear the include filter                                           |                                 |
+| `clear-exclude`           | Clear the exclude filter                                           |                                 |
+| `quit`                    | Quit                                                               | `:q`, `:quit`                   |
+| `confirm-quit`            | Quit; unsaved comments take a second press                         |                                 |
+| `force-quit`              | Quit without saving                                                | `:q!`, `:quit!`                 |
+| `write`                   | Save the session                                                   | `:w`, `:write`                  |
+| `write-quit`              | Save and quit, asking to copy the review if comments exist         | `:x`, `:wq`                     |
+| `export-quit`             | Save, copy the review if comments exist, and quit                  |                                 |
+| `reload`                  | Reload the diff and comments (PR mode: refetch the PR)             | `:e`, `:reload`                 |
+| `toggle-reviewed`         | Toggle file reviewed                                               |                                 |
+| `toggle-hunk-reviewed`    | Toggle hunk reviewed                                               |                                 |
+| `comment-line`            | Comment on the cursor line                                         |                                 |
+| `comment-file`            | Comment on the file                                                |                                 |
+| `comment-review`          | Comment on the whole review                                        |                                 |
+| `edit-comment`            | Edit the comment at cursor                                         |                                 |
+| `edit-comment-at-end`     | Edit the comment at cursor, text cursor at end                     |                                 |
+| `delete-comment`          | Delete the comment at cursor                                       |                                 |
+| `edit-file`               | Open the focused file in $EDITOR                                   | `:edit`                         |
+| `visual-mode`             | Start a visual selection                                           |                                 |
+| `comment-range`           | Comment on the selection                                           |                                 |
+| `suggest-range`           | Suggest a change to the selection                                  |                                 |
+| `copy-selection`          | Copy the selected text                                             |                                 |
+| `export`                  | Copy the review to the clipboard                                   | `:clip`, `:export`              |
+| `export-force-quit`       | Copy the review to the clipboard and quit without saving           | `:clipq`                        |
+| `copy-comment`            | Copy the comment at cursor                                         |                                 |
+| `copy-url`                | Copy the pull request URL (PR mode)                                | `:copy-url`                     |
+| `clear`                   | Clear comments and reviewed marks                                  | `:clear`                        |
+| `clear-comments`          | Clear comments                                                     | `:clearc`                       |
+| `search`                  | Search (filter in lists)                                           |                                 |
+| `search-next`             | Next search match                                                  |                                 |
+| `search-prev`             | Previous search match                                              |                                 |
+| `clear-search-highlight`  | Clear search highlight                                             |                                 |
+| `command-mode`            | Enter command mode                                                 |                                 |
+| `help`                    | Toggle help                                                        | `:help`, `:h`                   |
+| `messages`                | Show full details for the current error                            | `:messages`                     |
+| `version`                 | Show the version                                                   | `:version`                      |
+| `check-update`            | Check for updates                                                  | `:update`                       |
+| `exit`                    | Close or cancel                                                    |                                 |
+| `redraw`                  | Redraw the screen                                                  |                                 |
+| `set-wrap`                | Wrap long lines                                                    | `:set wrap`                     |
+| `toggle-wrap`             | Toggle line wrap                                                   | `:set wrap!`, `:wrap`           |
+| `set-relativenumber`      | Show relative line numbers                                         | `:set relativenumber`           |
+| `set-norelativenumber`    | Show absolute line numbers                                         | `:set norelativenumber`         |
+| `toggle-relativenumber`   | Toggle relative line numbers                                       | `:set relativenumber!`          |
+| `set-worddiff`            | Emphasize changed words                                            | `:set worddiff`                 |
+| `set-noworddiff`          | Do not emphasize changed words                                     | `:set noworddiff`               |
+| `toggle-worddiff`         | Toggle changed-word emphasis                                       | `:set worddiff!`                |
+| `toggle-vim`              | Toggle vim editing in comments                                     | `:vim`, `:set vim!`             |
+| `set-vim`                 | Use vim editing in comments                                        | `:set vim`                      |
+| `set-novim`               | Use plain editing in comments                                      | `:novim`, `:set novim`          |
+| `show-commits`            | Show the commit selector                                           | `:set commits`                  |
+| `hide-commits`            | Hide the commit selector                                           | `:set nocommits`                |
+| `toggle-commits`          | Show or hide the commit selector                                   | `:set commits!`                 |
+| `show-reviewed`           | Show reviewed files                                                | `:set reviewed`                 |
+| `hide-reviewed`           | Hide reviewed files                                                | `:set noreviewed`               |
+| `toggle-show-reviewed`    | Show or hide reviewed files                                        | `:reviewed`, `:set reviewed!`   |
+| `set-minimal`             | Use the minimal UI                                                 | `:set minimal`                  |
+| `set-nominimal`           | Use the full UI                                                    | `:set nominimal`                |
+| `toggle-minimal`          | Toggle the minimal UI                                              | `:set minimal!`                 |
+| `collapse-generated`      | Collapse generated files                                           | `:set generated`                |
+| `expand-generated`        | Expand generated files                                             | `:set nogenerated`              |
+| `toggle-generated`        | Collapse or expand generated files                                 | `:generated`, `:set generated!` |
+| `toggle-diff-view`        | Switch unified and side-by-side diff                               | `:diff`                         |
+| `toggle-single-file-view` | Toggle single-file view                                            | `:focus`, `:f`                  |
+| `stage`                   | Stage reviewed files                                               | `:stage`                        |
+| `open-commits`            | Open the review target selector on Local                           | `:commits`, `:targets`          |
+| `open-prs`                | Open the review target selector on Pull Requests                   | `:prs`                          |
+| `open-sessions`           | Open the review target selector on Sessions                        | `:sessions`, `:reviews`         |
+| `next-tab`                | Next tab                                                           |                                 |
+| `prev-tab`                | Previous tab                                                       |                                 |
+| `toggle-review-requested` | Cycle the PR scope: all, review requested, requested by name       |                                 |
+| `toggle-empty-sessions`   | Show or hide empty sessions                                        |                                 |
+| `delete-session`          | Delete the session under the cursor                                |                                 |
+| `submit`                  | Pick a review event to submit (PR mode)                            | `:submit`                       |
+| `submit-comment`          | Submit a COMMENT review                                            | `:submit comment`               |
+| `submit-approve`          | Submit an APPROVE review                                           | `:submit approve`               |
+| `submit-request-changes`  | Submit a REQUEST_CHANGES review                                    | `:submit request-changes`       |
+| `submit-draft`            | Push a pending (draft) review                                      | `:submit draft`                 |
+| `summary`                 | List pending comments                                              | `:summary`                      |
+| `theme-picker`            | Pick a theme                                                       | `:theme`                        |
+| `comments-unresolved`     | Show unresolved remote comments (PR mode)                          | `:comments unresolved`          |
+| `comments-all`            | Show all remote comments, resolved and outdated included (PR mode) | `:comments all`                 |
+| `comments-hide`           | Hide remote comments (PR mode)                                     | `:comments hide`                |
+| `submit-advance`          | Continue to submit confirmation                                    |                                 |
+| `reload-pr`               | Reload the pull request                                            |                                 |
+| `file-picker`             | Jump to a file by path                                             |                                 |
+| `yes`                     | Confirm                                                            |                                 |
+| `no`                      | Decline                                                            |                                 |
 
 ## Whitespace comparison
 

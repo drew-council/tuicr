@@ -301,8 +301,11 @@ fn main() -> anyhow::Result<()> {
                 }
                 if let Some(leader) = cfg.leader {
                     app.leader_key = leader;
-                    app.keymap = tuicr::input::Keymap::with_defaults(leader);
                 }
+                let (keymap, keymap_warnings) =
+                    tuicr::input::Keymap::build(app.leader_key, &cfg.keys);
+                app.keymap = keymap;
+                startup_warnings.extend(keymap_warnings);
                 app.comment_vim_enabled = cfg.comment_vim.unwrap_or(false);
                 app.q_quits = cfg.q_quits.unwrap_or(false);
                 app.copy_on_quit = cfg

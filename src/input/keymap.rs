@@ -421,7 +421,13 @@ impl Keymap {
         }
         let ctrl_c = KeyChord::from(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
         for binding in user {
-            let rejected = match parse_key_sequence(&binding.keys, leader) {
+            let parsed = parse_key_sequence(&binding.keys, leader).map(|chords| {
+                chords
+                    .into_iter()
+                    .map(KeyChord::loosened)
+                    .collect::<Vec<_>>()
+            });
+            let rejected = match parsed {
                 Err(e) => Some(e),
                 Ok(chords) if chords.contains(&ctrl_c) => {
                     Some("Ctrl-c always exits and cannot be bound".into())
@@ -478,15 +484,22 @@ impl Keymap {
                 if !row.user {
                     continue;
                 }
-                for (_, old) in displaced {
-                    warnings.insert(format!(
-                        "Warning: keys.{} '{}' replaces '{}' ({}); bind '{}' = \"none\" to silence this",
-                        row.binding.context.name(),
-                        row.binding.keys,
-                        old.keys,
-                        old.action.name().unwrap_or("none"),
-                        old.keys,
-                    ));
+                for (old_chords, old) in displaced {
+                    let unbound_by_user = active.iter().any(|other| {
+                        other.user
+                            && other.binding.action == Action::None
+                            && other.chords == old_chords
+                    });
+                    if !unbound_by_user {
+                        warnings.insert(format!(
+                            "Warning: keys.{} '{}' replaces '{}' ({}); bind '{}' = \"none\" to silence this",
+                            row.binding.context.name(),
+                            row.binding.keys,
+                            old.keys,
+                            old.action.name().unwrap_or("none"),
+                            old.keys,
+                        ));
+                    }
                 }
             }
             let map = map
@@ -872,6 +885,25 @@ mod tests {
     }
 
     #[test]
+    fn should_match_a_user_bound_capital_however_shift_is_reported() {
+        let (keymap, warnings) = Keymap::build(
+            DEFAULT_LEADER_KEY,
+            &[Binding::new(K::Normal, "G", A::GoToTop)],
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        for modifiers in [KeyModifiers::NONE, KeyModifiers::SHIFT] {
+            assert_eq!(
+                keymap.resolve(
+                    K::Diff,
+                    &mut Vec::new(),
+                    chord(KeyCode::Char('G'), modifiers)
+                ),
+                Resolution::Run(A::GoToTop)
+            );
+        }
+    }
+
+    #[test]
     fn should_unbind_with_none() {
         let (keymap, _) =
             Keymap::build(DEFAULT_LEADER_KEY, &[Binding::new(K::Normal, "Y", A::None)]);
@@ -891,14 +923,20 @@ mod tests {
             "{warnings:?}"
         );
 
-        let (_, warnings) = Keymap::build(
-            DEFAULT_LEADER_KEY,
-            &[
+        for bindings in [
+            [
                 Binding::new(K::Normal, "dd", A::None),
                 Binding::new(K::Normal, "d", A::HalfPageDown),
             ],
-        );
-        assert!(warnings.is_empty(), "{warnings:?}");
+            [
+                Binding::new(K::Normal, "d", A::HalfPageDown),
+                Binding::new(K::Normal, "dd", A::None),
+            ],
+        ] {
+            let (keymap, warnings) = Keymap::build(DEFAULT_LEADER_KEY, &bindings);
+            assert!(warnings.is_empty(), "{warnings:?}");
+            assert_eq!(run(&keymap, K::Diff, "d"), Resolution::Run(A::HalfPageDown));
+        }
     }
 
     #[test]
