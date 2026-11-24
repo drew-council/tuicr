@@ -998,7 +998,7 @@ fn enter_in_inline_selector_selects_only_cursor_commit() {
         app.commit_selection_range = Some(range);
         app.commit_list_cursor = cursor;
 
-        handle_commit_selector_action(&mut app, Action::SelectFile);
+        handle_commit_selector_action(&mut app, Action::Select);
 
         assert_eq!(app.commit_selection_range, Some((cursor, cursor)));
         assert_eq!(app.commit_list_cursor, cursor);
@@ -1014,7 +1014,7 @@ fn enter_in_inline_selector_selects_cursor_commit_when_none_selected() {
     app.commit_selection_range = None;
     app.commit_list_cursor = 3;
 
-    handle_commit_selector_action(&mut app, Action::SelectFile);
+    handle_commit_selector_action(&mut app, Action::Select);
 
     assert_eq!(app.commit_selection_range, Some((3, 3)));
 }

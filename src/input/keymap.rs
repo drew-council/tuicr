@@ -171,8 +171,8 @@ pub const DEFAULT_BINDINGS: &[Binding] = &[
     B::new(K::Normal, "z<*-b>", A::CursorToBottom),
     B::new(K::Normal, "<Tab>", A::ToggleFocus),
     B::new(K::Normal, "<*-S-Tab>", A::ToggleFocusReverse),
-    B::new(K::Normal, "<CR>", A::SelectFile),
-    B::new(K::Normal, "<S-CR>", A::SelectFileFull),
+    B::new(K::Normal, "<CR>", A::Select),
+    B::new(K::Normal, "<S-CR>", A::SelectFull),
     B::new(K::Normal, "<Space>", A::ToggleExpand),
     B::new(K::Normal, "o", A::ExpandAll),
     B::new(K::Normal, "<*-O>", A::CollapseAll),
@@ -207,12 +207,11 @@ pub const DEFAULT_BINDINGS: &[Binding] = &[
     B::new(K::Normal, "<leader><*-f>", A::ToggleSingleFileView),
     B::new(K::Normal, "<leader><*-n>", A::ToggleRelativeNumber),
     B::new(K::Normal, "<leader><*-p>", A::FilePicker),
-    // The tree claims these; the diff keeps `i` = edit comment, `e` = edit file, `/` = search.
+    // The tree claims these; the diff keeps `i` = edit comment, `e` = edit file.
     B::new(K::FileTree, "i", A::FileTreeFilterInclude),
     B::new(K::FileTree, "e", A::FileTreeFilterExclude),
     B::new(K::FileTree, "<*-I>", A::FileTreeClearInclude),
     B::new(K::FileTree, "<*-E>", A::FileTreeClearExclude),
-    B::new(K::FileTree, "<*-/>", A::FileTreeSearch),
     // Visual selection
     B::new(K::Visual, "j", A::CursorDown(1)),
     B::new(K::Visual, "<Down>", A::CursorDown(1)),
@@ -227,7 +226,7 @@ pub const DEFAULT_BINDINGS: &[Binding] = &[
     B::new(K::Visual, "c", A::AddRangeComment),
     B::new(K::Visual, "<CR>", A::AddRangeComment),
     B::new(K::Visual, "s", A::AddRangeSuggestion),
-    B::new(K::Visual, "y", A::ExportToClipboard),
+    B::new(K::Visual, "y", A::CopySelection),
     B::new(K::Visual, "<Esc>", A::ExitMode),
     B::new(K::Visual, "<*-v>", A::ExitMode),
     B::new(K::Visual, "<*-V>", A::ExitMode),
@@ -245,7 +244,7 @@ pub const DEFAULT_BINDINGS: &[Binding] = &[
     B::new(K::Summary, "<PageUp>", A::PageUp),
     B::new(K::Summary, "g", A::GoToTop),
     B::new(K::Summary, "<*-G>", A::GoToBottom),
-    B::new(K::Summary, "<CR>", A::SubmitInput),
+    B::new(K::Summary, "<CR>", A::Select),
     B::new(K::Summary, "dd", A::DeleteComment),
     B::new(K::Summary, "<Esc>", A::ExitMode),
     B::new(K::Summary, "q", A::ExitMode),
@@ -300,12 +299,12 @@ pub const DEFAULT_BINDINGS: &[Binding] = &[
     B::new(K::Confirm, "<*-N>", A::ConfirmNo),
     B::new(K::Confirm, "<*-Esc>", A::ConfirmNo),
     // Submit flow
-    B::new(K::SubmitResolver, "j", A::SubmitResolverDown),
-    B::new(K::SubmitResolver, "<Down>", A::SubmitResolverDown),
-    B::new(K::SubmitResolver, "k", A::SubmitResolverUp),
-    B::new(K::SubmitResolver, "<Up>", A::SubmitResolverUp),
-    B::new(K::SubmitResolver, "<CR>", A::SubmitResolverToggle),
-    B::new(K::SubmitResolver, "<Space>", A::SubmitResolverToggle),
+    B::new(K::SubmitResolver, "j", A::CursorDown(1)),
+    B::new(K::SubmitResolver, "<Down>", A::CursorDown(1)),
+    B::new(K::SubmitResolver, "k", A::CursorUp(1)),
+    B::new(K::SubmitResolver, "<Up>", A::CursorUp(1)),
+    B::new(K::SubmitResolver, "<CR>", A::Select),
+    B::new(K::SubmitResolver, "<Space>", A::ToggleSelect),
     B::new(K::SubmitResolver, "s", A::SubmitResolverAdvance),
     B::new(K::SubmitResolver, "<Esc>", A::ExitMode),
     B::new(K::SubmitConfirm, "<*-y>", A::ConfirmYes),
@@ -316,23 +315,23 @@ pub const DEFAULT_BINDINGS: &[Binding] = &[
     B::new(K::SubmitConfirm, "<*-Esc>", A::ConfirmNo),
     B::new(K::SubmitConfirm, "<*-r>", A::SubmitReloadPr),
     B::new(K::SubmitConfirm, "<*-R>", A::SubmitReloadPr),
-    B::new(K::SubmitPicker, "j", A::SubmitPickerDown),
-    B::new(K::SubmitPicker, "<Down>", A::SubmitPickerDown),
-    B::new(K::SubmitPicker, "k", A::SubmitPickerUp),
-    B::new(K::SubmitPicker, "<Up>", A::SubmitPickerUp),
-    B::new(K::SubmitPicker, "<CR>", A::SubmitPickerConfirm),
+    B::new(K::SubmitPicker, "j", A::CursorDown(1)),
+    B::new(K::SubmitPicker, "<Down>", A::CursorDown(1)),
+    B::new(K::SubmitPicker, "k", A::CursorUp(1)),
+    B::new(K::SubmitPicker, "<Up>", A::CursorUp(1)),
+    B::new(K::SubmitPicker, "<CR>", A::Select),
     B::new(K::SubmitPicker, "<Esc>", A::ExitMode),
     B::new(K::SubmitPicker, "q", A::QuitHint),
     // Review target selector
-    B::new(K::Targets, "j", A::CommitSelectDown),
-    B::new(K::Targets, "<Down>", A::CommitSelectDown),
-    B::new(K::Targets, "k", A::CommitSelectUp),
-    B::new(K::Targets, "<Up>", A::CommitSelectUp),
-    B::new(K::Targets, "<Space>", A::ToggleCommitSelect),
-    B::new(K::Targets, "<CR>", A::ConfirmCommitSelect),
+    B::new(K::Targets, "j", A::CursorDown(1)),
+    B::new(K::Targets, "<Down>", A::CursorDown(1)),
+    B::new(K::Targets, "k", A::CursorUp(1)),
+    B::new(K::Targets, "<Up>", A::CursorUp(1)),
+    B::new(K::Targets, "<Space>", A::ToggleSelect),
+    B::new(K::Targets, "<CR>", A::Select),
     B::new(K::Targets, "<Tab>", A::TargetSelectorTabNext),
     B::new(K::Targets, "<*-S-Tab>", A::TargetSelectorTabPrev),
-    B::new(K::Targets, "<*-/>", A::BeginTargetFilter),
+    B::new(K::Targets, "<*-/>", A::EnterSearchMode),
     B::new(K::Targets, "r", A::TogglePrReviewRequestedFilter),
     B::new(K::Targets, "a", A::SessionsTabToggleShowEmpty),
     B::new(K::Targets, "dd", A::SessionsTabDelete),
@@ -344,16 +343,16 @@ pub const DEFAULT_BINDINGS: &[Binding] = &[
     B::new(K::ThemePicker, "<Down>", A::CursorDown(1)),
     B::new(K::ThemePicker, "k", A::CursorUp(1)),
     B::new(K::ThemePicker, "<Up>", A::CursorUp(1)),
-    B::new(K::ThemePicker, "<CR>", A::SubmitInput),
-    B::new(K::ThemePicker, "/", A::ThemePickerFilter),
+    B::new(K::ThemePicker, "<CR>", A::Select),
+    B::new(K::ThemePicker, "/", A::EnterSearchMode),
     B::new(K::ThemePicker, "<Esc>", A::ExitMode),
     // File picker
     B::new(K::FilePicker, "j", A::CursorDown(1)),
     B::new(K::FilePicker, "<Down>", A::CursorDown(1)),
     B::new(K::FilePicker, "k", A::CursorUp(1)),
     B::new(K::FilePicker, "<Up>", A::CursorUp(1)),
-    B::new(K::FilePicker, "<CR>", A::SubmitInput),
-    B::new(K::FilePicker, "/", A::FilePickerFilter),
+    B::new(K::FilePicker, "<CR>", A::Select),
+    B::new(K::FilePicker, "/", A::EnterSearchMode),
     B::new(K::FilePicker, "<Esc>", A::ExitMode),
 ];
 
@@ -640,8 +639,8 @@ mod tests {
         assert_eq!(picker("<Down>"), Resolution::Run(A::CursorDown(1)));
         assert_eq!(picker("k"), Resolution::Run(A::CursorUp(1)));
         assert_eq!(picker("<Up>"), Resolution::Run(A::CursorUp(1)));
-        assert_eq!(picker("/"), Resolution::Run(A::FilePickerFilter));
-        assert_eq!(picker("<CR>"), Resolution::Run(A::SubmitInput));
+        assert_eq!(picker("/"), Resolution::Run(A::EnterSearchMode));
+        assert_eq!(picker("<CR>"), Resolution::Run(A::Select));
         assert_eq!(picker("<Esc>"), Resolution::Run(A::ExitMode));
         // Other letters are not text until `/` opens the filter draft.
         assert_eq!(picker("x"), Resolution::Unbound);
@@ -660,6 +659,16 @@ mod tests {
             assert!(
                 seen.insert((*context, keys)),
                 "duplicate {keys} in {context:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_bind_only_registered_actions_by_default() {
+        for B { keys, action, .. } in DEFAULT_BINDINGS {
+            assert!(
+                action.name().is_some() || *action == Action::QuitHint,
+                "{keys} binds unregistered {action:?}"
             );
         }
     }

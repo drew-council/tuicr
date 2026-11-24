@@ -743,7 +743,7 @@ mod tests {
 
         handle_summary_action(&mut app, Action::CursorDown(1));
         handle_summary_action(&mut app, Action::CursorUp(1));
-        handle_summary_action(&mut app, Action::SubmitInput);
+        handle_summary_action(&mut app, Action::Select);
         assert_eq!(app.input_mode, InputMode::Summary);
         assert_eq!(app.summary_state.scroll_offset, 0);
     }
@@ -1022,7 +1022,7 @@ mod tests {
             Some(Some(SummaryCommentTarget::Line { comment_id, .. })) if comment_id == &ids[1]
         ));
 
-        handle_summary_action(&mut app, Action::SubmitInput);
+        handle_summary_action(&mut app, Action::Select);
 
         assert_eq!(app.input_mode, InputMode::Normal);
         assert_eq!(app.focused_panel, FocusedPanel::Diff);
@@ -1064,7 +1064,7 @@ mod tests {
                 );
                 draw_summary(&mut app, 120, 30);
 
-                handle_summary_action(&mut app, Action::SubmitInput);
+                handle_summary_action(&mut app, Action::Select);
 
                 assert_eq!(app.input_mode, InputMode::Normal);
                 assert!(!app.is_single_file_view);
@@ -1137,7 +1137,7 @@ mod tests {
         }];
         app.commit_selection_range = Some((0, 0));
 
-        handle_summary_action(&mut app, Action::SubmitInput);
+        handle_summary_action(&mut app, Action::Select);
 
         assert_eq!(app.input_mode, InputMode::Summary);
         assert!(app.is_single_file_view);
@@ -1148,7 +1148,7 @@ mod tests {
 
         draw_summary(&mut app, 120, 30);
         assert!(matches!(app.summary_state.targets.first(), Some(None)));
-        handle_summary_action(&mut app, Action::SubmitInput);
+        handle_summary_action(&mut app, Action::Select);
         assert_eq!(app.input_mode, InputMode::Summary);
         assert!(app.delete_selected_summary_comment());
         assert!(app.session.find_comment_by_id(&ids[0]).is_none());

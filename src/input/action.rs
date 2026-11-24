@@ -3,10 +3,8 @@
 //! Every user-facing behavior is an [`Action`]. Keys and commands both
 //! resolve to one, and a handler for the active context performs it. Actions
 //! listed in [`ACTIONS`] carry a stable kebab-case name, which is what the
-//! keymap config refers to. Variants without a spec cannot be bound:
-//! internal input events (typed text, paste, mouse), prefix keys and digits,
-//! and the actions that repeat a listed one for a single mode
-//! (`CommitSelectDown`, `SubmitPickerConfirm`, `FileTreeSearch`).
+//! keymap config refers to. Variants without a spec are internal input
+//! events (typed text, paste, mouse) and cannot be bound.
 
 /// A single user intent, independent of the key or command that produced it.
 ///
@@ -23,9 +21,9 @@ pub enum Action {
     PageUp,
     GoToTop,
     GoToBottom,
-    /// Jump to the new-side source line given by the count (`{N}G`).
+    /// Jump to the new-side source line given by the count (`{N}G`, `:N`).
     GoToLine,
-    /// Jump to the old-side source line given by the count.
+    /// Jump to the old-side source line given by the count (`:oN`).
     GoToOldLine,
     NextFile,
     PrevFile,
@@ -43,7 +41,10 @@ pub enum Action {
     // Panel focus
     ToggleFocus,
     ToggleFocusReverse,
-    SelectFile,
+    /// Activate the item under the cursor (Enter).
+    Select,
+    /// Activate the item under the cursor fully (Shift-Enter).
+    SelectFull,
 
     // Review actions
     ToggleReviewed,
@@ -66,6 +67,8 @@ pub enum Action {
     EnterVisualMode,
     AddRangeComment,
     AddRangeSuggestion,
+    /// Copy the visual selection's text.
+    CopySelection,
 
     // Session
     /// Quit, refusing while unsaved comments exist (`:q`).
@@ -104,6 +107,7 @@ pub enum Action {
 
     // Mode changes
     EnterCommandMode,
+    /// Open the `/` prompt. Lists interpret it as their filter prompt.
     EnterSearchMode,
     ExitMode,
     ToggleHelp,
@@ -150,7 +154,9 @@ pub enum Action {
     ExpandGenerated,
     ToggleGenerated,
 
-    // Text input
+    // Text input and the comment box. These come from the fixed maps in
+    // `text_input.rs` and from paste events. They have no `ACTIONS` entry, so
+    // `[keys]` cannot bind them.
     InsertChar(char),
     /// Bracketed-paste payload from the terminal. Carries the full pasted
     /// string so multi-line / shifted input doesn't get re-interpreted as
@@ -171,7 +177,6 @@ pub enum Action {
     TextCursorWordLeft,
     TextCursorWordRight,
 
-    // Comment type
     CycleCommentType,
     CycleCommentTypeReverse,
 
@@ -179,11 +184,9 @@ pub enum Action {
     ConfirmYes,
     ConfirmNo,
 
-    // Commit selection
-    CommitSelectUp,
-    CommitSelectDown,
-    ToggleCommitSelect,
-    ConfirmCommitSelect,
+    // Lists
+    /// Toggle the list item under the cursor (Space).
+    ToggleSelect,
     /// Cycle inline commit selector to next individual commit (`)`)
     CycleCommitNext,
     /// Cycle inline commit selector to previous individual commit (`(`)
@@ -193,13 +196,9 @@ pub enum Action {
     OpenCommits,
     OpenPullRequests,
     OpenSessions,
-    /// Switch to the next selector tab (Tab key).
     TargetSelectorTabNext,
-    /// Switch to the previous selector tab (Shift-Tab).
     TargetSelectorTabPrev,
-    /// Begin editing the local filter inside the PR tab (`/`).
-    BeginTargetFilter,
-    /// Toggle PR tab between all open PRs and PRs awaiting your review (`r`).
+    /// Toggle PR tab between all open PRs and PRs awaiting your review.
     TogglePrReviewRequestedFilter,
     /// Sessions tab: show or hide sessions holding no review progress.
     SessionsTabToggleShowEmpty,
@@ -216,50 +215,20 @@ pub enum Action {
     CommentsUnresolved,
     CommentsAll,
     CommentsHide,
-
-    // Submit resolver
-    /// Move resolver cursor down (`j` / Down).
-    SubmitResolverDown,
-    /// Move resolver cursor up (`k` / Up).
-    SubmitResolverUp,
-    /// Toggle the action for the row under the resolver cursor (Enter).
-    SubmitResolverToggle,
-    /// Advance from resolver to final confirmation (`s`).
+    /// Advance from the resolver to final confirmation.
     SubmitResolverAdvance,
-    /// Reload the PR in submit confirm (`r`, only when stale-head warning is
-    /// active). Currently triggers the same path as `:e`.
+    /// Reload the PR from the submit confirmation (stale-head warning only).
     SubmitReloadPr,
-
-    // Submit action picker (bare `:submit`)
-    /// Move action-picker cursor down (`j` / Down).
-    SubmitPickerDown,
-    /// Move action-picker cursor up (`k` / Up).
-    SubmitPickerUp,
-    /// Confirm the picker selection (Enter).
-    SubmitPickerConfirm,
 
     ToggleExpand,
     ExpandAll,
     CollapseAll,
-    SelectFileFull,
 
-    // File tree filters (only produced while the file tree is focused, see
-    // `map_file_tree_mode`)
-    /// `i` — open the include-regex prompt.
+    // File tree filters
     FileTreeFilterInclude,
-    /// `e` — open the exclude-regex prompt.
     FileTreeFilterExclude,
-    /// `I` — drop the include filter.
     FileTreeClearInclude,
-    /// `E` — drop the exclude filter.
     FileTreeClearExclude,
-    /// `/` — open the file-tree search prompt.
-    FileTreeSearch,
-
-    /// `/` inside the theme picker — open its filter prompt.
-    ThemePickerFilter,
-    /// `/` inside the file picker — open its filter prompt.
-    FilePickerFilter,
 
     // No-op
     None,
@@ -396,8 +365,9 @@ pub const ACTIONS: &[ActionSpec] = &[
     spec(A::FocusPaneUp, "focus-up", Ignore, "Focus the pane above"),
     spec(A::FocusPaneDown, "focus-down", Ignore, "Focus the pane below"),
     spec(A::ToggleFileList, "toggle-file-list", Ignore, "Show or hide the file list"),
-    spec(A::SelectFile, "select", Ignore, "Open or activate the item under the cursor"),
-    spec(A::SelectFileFull, "select-full", Ignore, "Expand the whole gap under the cursor"),
+    spec(A::Select, "select", Ignore, "Open or activate the item under the cursor"),
+    spec(A::SelectFull, "select-full", Ignore, "Expand the whole gap under the cursor"),
+    spec(A::ToggleSelect, "toggle-select", Ignore, "Toggle the item under the cursor"),
     spec(A::ToggleExpand, "toggle-expand", Ignore, "Toggle directory or gap"),
     spec(A::ExpandAll, "expand-all", Ignore, "Expand all directories"),
     spec(A::CollapseAll, "collapse-all", Ignore, "Collapse all directories"),
@@ -426,6 +396,7 @@ pub const ACTIONS: &[ActionSpec] = &[
     spec(A::EnterVisualMode, "visual-mode", Ignore, "Start a visual selection"),
     spec(A::AddRangeComment, "comment-range", Ignore, "Comment on the selection"),
     spec(A::AddRangeSuggestion, "suggest-range", Ignore, "Suggest a change to the selection"),
+    spec(A::CopySelection, "copy-selection", Ignore, "Copy the selected text"),
     spec(A::ExportToClipboard, "export", Ignore, "Copy the review to the clipboard").cmd(&["clip", "export"]),
     spec(A::ExportForceQuit, "export-force-quit", Ignore, "Copy the review to the clipboard and quit without saving").cmd(&["clipq"]),
     spec(A::CopyCommentAtCursor, "copy-comment", Ignore, "Copy the comment at cursor"),
@@ -433,7 +404,7 @@ pub const ACTIONS: &[ActionSpec] = &[
     spec(A::ClearAll, "clear", Ignore, "Clear comments and reviewed marks").cmd(&["clear"]),
     spec(A::ClearComments, "clear-comments", Ignore, "Clear comments").cmd(&["clearc"]),
     // Search
-    spec(A::EnterSearchMode, "search", Ignore, "Search"),
+    spec(A::EnterSearchMode, "search", Ignore, "Search (filter in lists)"),
     spec(A::SearchNext, "search-next", Ignore, "Next search match"),
     spec(A::SearchPrev, "search-prev", Ignore, "Previous search match"),
     spec(A::ClearSearchHighlight, "clear-search-highlight", Ignore, "Clear search highlight"),

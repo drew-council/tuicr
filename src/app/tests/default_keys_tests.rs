@@ -254,16 +254,8 @@ fn contexts() -> Vec<Context> {
             in_mode(InputMode::SubmitConfirm),
             submit_confirm(),
         ),
-        Context::new(
-            "theme picker",
-            in_mode(InputMode::ThemePicker),
-            picker(A::ThemePickerFilter),
-        ),
-        Context::new(
-            "file picker",
-            in_mode(InputMode::FilePicker),
-            picker(A::FilePickerFilter),
-        ),
+        Context::new("theme picker", in_mode(InputMode::ThemePicker), picker()),
+        Context::new("file picker", in_mode(InputMode::FilePicker), picker()),
         // Text inputs. An open prompt owns the keys, whichever pane has focus.
         Context::new("command line", in_mode(InputMode::Command), command_line()).rest(typed),
         Context::new("search", in_mode(InputMode::Search), prompt()).rest(typed),
@@ -301,8 +293,8 @@ fn review_pane() -> Vec<Row> {
         bind([ch('(')], A::CycleCommitPrev),
         bind([code(Tab)], A::ToggleFocus),
         bind(every_modifier(BackTab), A::ToggleFocusReverse),
-        bind([code(Enter)], A::SelectFile),
-        bind([with(SHIFT, Enter)], A::SelectFileFull),
+        bind([code(Enter)], A::Select),
+        bind([with(SHIFT, Enter)], A::SelectFull),
         bind([ch(' ')], A::ToggleExpand),
         bind([ch('o')], A::ExpandAll),
         bind([ch('O')], A::CollapseAll),
@@ -326,14 +318,13 @@ fn review_pane() -> Vec<Row> {
     ]
 }
 
-/// The review pane's keys, with `i`, `e`, `I`, `E` and `/` taken by the tree's filters.
+/// The review pane's keys, with `i`, `e`, `I` and `E` taken by the tree's filters.
 fn file_tree() -> Vec<Row> {
     let tree = vec![
         bind([ch('i')], A::FileTreeFilterInclude),
         bind([ch('e')], A::FileTreeFilterExclude),
         bind([ch('I')], A::FileTreeClearInclude),
         bind([ch('E')], A::FileTreeClearExclude),
-        bind([ch('/')], A::FileTreeSearch),
     ];
     let mut rows = review_pane();
     rows.retain(|(keys, _)| !tree.iter().any(|(taken, _)| taken == keys));
@@ -351,7 +342,7 @@ fn visual() -> Vec<Row> {
         bind([ctrl('b'), code(PageUp)], A::PageUp),
         bind([ch('c'), code(Enter)], A::AddRangeComment),
         bind([ch('s')], A::AddRangeSuggestion),
-        bind([ch('y')], A::ExportToClipboard),
+        bind([ch('y')], A::CopySelection),
         bind(
             [code(Esc), ch('v'), ch('V'), ctrl('v'), alt('v')],
             A::ExitMode,
@@ -392,7 +383,7 @@ fn summary() -> Vec<Row> {
         bind([code(Esc), ch('q')], A::ExitMode),
         bind([ch('j'), code(Down)], A::CursorDown(1)),
         bind([ch('k'), code(Up)], A::CursorUp(1)),
-        bind([code(Enter)], A::SubmitInput),
+        bind([code(Enter)], A::Select),
         bind([ctrl('d')], A::HalfPageDown),
         bind([ctrl('u')], A::HalfPageUp),
         bind([ctrl('f'), code(PageDown)], A::PageDown),
@@ -422,13 +413,13 @@ fn submit_confirm() -> Vec<Row> {
 
 fn target_selector() -> Vec<Row> {
     vec![
-        bind([ch('j'), code(Down)], A::CommitSelectDown),
-        bind([ch('k'), code(Up)], A::CommitSelectUp),
-        bind([ch(' ')], A::ToggleCommitSelect),
-        bind([code(Enter)], A::ConfirmCommitSelect),
+        bind([ch('j'), code(Down)], A::CursorDown(1)),
+        bind([ch('k'), code(Up)], A::CursorUp(1)),
+        bind([ch(' ')], A::ToggleSelect),
+        bind([code(Enter)], A::Select),
         bind([code(Tab)], A::TargetSelectorTabNext),
         bind(every_modifier(BackTab), A::TargetSelectorTabPrev),
-        bind([ch('/')], A::BeginTargetFilter),
+        bind([ch('/')], A::EnterSearchMode),
         bind([ch('r')], A::TogglePrReviewRequestedFilter),
         bind([ch('a')], A::SessionsTabToggleShowEmpty),
         bind([ch(':')], A::EnterCommandMode),
@@ -439,9 +430,9 @@ fn target_selector() -> Vec<Row> {
 
 fn submit_picker() -> Vec<Row> {
     vec![
-        bind([ch('j'), code(Down)], A::SubmitPickerDown),
-        bind([ch('k'), code(Up)], A::SubmitPickerUp),
-        bind([code(Enter)], A::SubmitPickerConfirm),
+        bind([ch('j'), code(Down)], A::CursorDown(1)),
+        bind([ch('k'), code(Up)], A::CursorUp(1)),
+        bind([code(Enter)], A::Select),
         bind([code(Esc)], A::ExitMode),
         bind([ch('q')], A::QuitHint),
     ]
@@ -449,21 +440,22 @@ fn submit_picker() -> Vec<Row> {
 
 fn submit_resolver() -> Vec<Row> {
     vec![
-        bind([ch('j'), code(Down)], A::SubmitResolverDown),
-        bind([ch('k'), code(Up)], A::SubmitResolverUp),
-        bind([code(Enter), ch(' ')], A::SubmitResolverToggle),
+        bind([ch('j'), code(Down)], A::CursorDown(1)),
+        bind([ch('k'), code(Up)], A::CursorUp(1)),
+        bind([code(Enter)], A::Select),
+        bind([ch(' ')], A::ToggleSelect),
         bind([ch('s')], A::SubmitResolverAdvance),
         bind([code(Esc)], A::ExitMode),
     ]
 }
 
-/// The theme picker and the file picker, which differ in the action that opens their filter.
-fn picker(filter: A) -> Vec<Row> {
+/// The theme picker and the file picker.
+fn picker() -> Vec<Row> {
     vec![
         bind([ch('j'), code(Down)], A::CursorDown(1)),
         bind([ch('k'), code(Up)], A::CursorUp(1)),
-        bind([code(Enter)], A::SubmitInput),
-        bind([ch('/')], filter),
+        bind([code(Enter)], A::Select),
+        bind([ch('/')], A::EnterSearchMode),
         bind([code(Esc)], A::ExitMode),
     ]
 }
