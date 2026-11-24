@@ -55,7 +55,7 @@ fn map_normal_mode(key: KeyEvent, leader_key: char) -> Action {
 
 fn q_action(q_quits: bool) -> Action {
     if q_quits {
-        Action::Quit
+        Action::ConfirmQuit
     } else {
         Action::QuitHint
     }
@@ -1162,23 +1162,23 @@ mod tests {
     fn should_map_q_to_quit_when_q_quits_is_enabled() {
         assert_eq!(
             map_normal_mode_with_q_quits(key(KeyCode::Char('q')), DEFAULT_LEADER_KEY, true),
-            Action::Quit
+            Action::ConfirmQuit
         );
         assert_eq!(
             map_file_tree_mode_with_q_quits(key(KeyCode::Char('q')), DEFAULT_LEADER_KEY, true),
-            Action::Quit
+            Action::ConfirmQuit
         );
         assert_eq!(
             map_visual_mode_with_q_quits(key(KeyCode::Char('q')), true),
-            Action::Quit
+            Action::ConfirmQuit
         );
         assert_eq!(
             map_commit_select_mode_with_q_quits(key(KeyCode::Char('q')), true),
-            Action::Quit
+            Action::ConfirmQuit
         );
         assert_eq!(
             map_submit_action_picker_mode_with_q_quits(key(KeyCode::Char('q')), true),
-            Action::Quit
+            Action::ConfirmQuit
         );
     }
 }

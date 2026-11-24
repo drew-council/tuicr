@@ -3110,7 +3110,8 @@ fn should_show_quit_hint_message_without_quitting_in_commit_select_mode() {
     // given
     let mut app = build_app();
     // when
-    crate::handler::handle_commit_select_action(&mut app, crate::input::Action::QuitHint);
+    app.input_mode = InputMode::CommitSelect;
+    crate::handler::dispatch_action(&mut app, crate::input::Action::QuitHint);
     // then
     assert!(!app.should_quit);
     assert_eq!(
@@ -4901,7 +4902,7 @@ fn should_not_discard_agent_comment_on_colon_q_before_poll() {
 fn should_not_discard_agent_comment_on_q_before_poll() {
     let mut app = app_with_external_comment_on_disk();
 
-    crate::handler::handle_normal_action(&mut app, crate::input::Action::Quit);
+    crate::handler::dispatch_action(&mut app, crate::input::Action::ConfirmQuit);
 
     assert!(!app.should_quit);
     assert!(app.session_path.as_ref().unwrap().exists());
@@ -4929,7 +4930,7 @@ fn should_not_discard_saved_comment_deleted_in_memory_on_q() {
         .clear();
     app.dirty = true;
 
-    crate::handler::handle_normal_action(&mut app, crate::input::Action::Quit);
+    crate::handler::dispatch_action(&mut app, crate::input::Action::ConfirmQuit);
 
     assert!(!app.should_quit);
     assert!(app.session_path.as_ref().unwrap().exists());
@@ -4946,7 +4947,7 @@ fn should_delete_reviewed_only_session_file_on_q() {
     let file = app.session_path.clone().unwrap();
     assert!(file.exists());
 
-    crate::handler::handle_normal_action(&mut app, crate::input::Action::Quit);
+    crate::handler::dispatch_action(&mut app, crate::input::Action::ConfirmQuit);
 
     assert!(app.should_quit);
     assert!(!file.exists());
@@ -4962,7 +4963,7 @@ fn should_not_quit_on_zz_when_save_fails() {
     std::fs::write(&blocker, "x").unwrap();
     crate::persistence::storage::set_test_reviews_dir(Some(blocker.join("reviews")));
 
-    crate::handler::handle_write_and_quit(&mut app);
+    crate::handler::dispatch_action(&mut app, crate::input::Action::ExportQuit);
     crate::persistence::storage::set_test_reviews_dir(None);
 
     assert!(!app.should_quit);
@@ -4978,7 +4979,7 @@ fn should_quit_on_zz_when_save_succeeds() {
     app.session
         .add_file(PathBuf::from("a.rs"), FileStatus::Modified, 0);
 
-    crate::handler::handle_write_and_quit(&mut app);
+    crate::handler::dispatch_action(&mut app, crate::input::Action::ExportQuit);
 
     assert!(app.should_quit);
 }
