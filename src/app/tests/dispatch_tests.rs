@@ -1,9 +1,10 @@
 use crate::app::*;
-use crate::handler::dispatch_action;
+use crate::handler::{dispatch_action, handle_key};
 use crate::input::{Action, Invocation};
 use crate::model::LineSide;
 use crate::model::{DiffFile, DiffHunk, DiffLine, FileStatus, LineOrigin};
 use crate::vcs::traits::{VcsBackend, VcsInfo, VcsType};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
 
 struct StubVcs(VcsInfo);
@@ -272,7 +273,7 @@ fn should_run_the_same_action_for_a_command_and_a_key() {
     crate::handler::handle_command_action(&mut by_command, Action::SubmitInput);
 
     let mut by_key = three_files();
-    dispatch_action(&mut by_key, Action::ToggleRelativeNumber);
+    press(&mut by_key, ";n");
 
     assert_eq!(by_command.input_mode, InputMode::Normal);
     assert!(by_command.relative_line_numbers);
@@ -293,4 +294,113 @@ fn should_run_a_line_number_command_as_a_counted_jump() {
         by_command.diff_state.cursor_line,
         by_key.diff_state.cursor_line
     );
+}
+
+fn press(app: &mut App, keys: &str) {
+    for c in keys.chars() {
+        handle_key(app, KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+}
+
+#[test]
+fn should_apply_a_typed_count_to_the_next_motion() {
+    let mut typed = three_files();
+    let mut manual = three_files();
+
+    press(&mut typed, "5j");
+    manual.cursor_down(5);
+
+    assert_eq!(typed.diff_state.cursor_line, manual.diff_state.cursor_line);
+    assert_eq!(typed.pending_count, None);
+}
+
+#[test]
+fn should_jump_to_a_line_with_a_typed_count_and_g() {
+    let mut typed = three_files();
+    let mut manual = three_files();
+
+    press(&mut typed, "12G");
+    manual.go_to_source_line(12, LineSide::New);
+
+    assert_eq!(typed.diff_state.cursor_line, manual.diff_state.cursor_line);
+}
+
+#[test]
+fn should_wait_for_the_second_key_of_a_sequence() {
+    let mut app = three_files();
+
+    press(&mut app, ";");
+    assert!(app.show_file_list);
+    assert!(!app.pending_keys.is_empty());
+
+    press(&mut app, "e");
+    assert!(!app.show_file_list);
+    assert!(app.pending_keys.is_empty());
+}
+
+#[test]
+fn should_drop_a_count_when_a_sequence_starts() {
+    let mut app = three_files();
+
+    press(&mut app, "3z");
+
+    assert_eq!(app.pending_count, None);
+}
+
+#[test]
+fn should_keep_alt_chords_the_comment_editor_binds() {
+    let mut app = three_files();
+    app.input_mode = InputMode::Comment;
+    app.comment_buffer = "one two".to_string();
+    app.comment_cursor = app.comment_buffer.len();
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT),
+    );
+
+    assert_eq!(app.input_mode, InputMode::Comment);
+    assert_eq!(app.comment_cursor, 4);
+}
+
+#[test]
+fn should_redraw_on_ctrl_l_while_typing_a_comment() {
+    let mut app = three_files();
+    app.input_mode = InputMode::Comment;
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL),
+    );
+
+    assert!(app.take_full_redraw());
+    assert!(app.comment_buffer.is_empty());
+}
+
+#[test]
+fn should_type_digits_into_the_command_line() {
+    let mut app = three_files();
+    press(&mut app, ":42");
+
+    assert_eq!(app.input_mode, InputMode::Command);
+    assert_eq!(app.command_buffer, "42");
+    assert_eq!(app.pending_count, None);
+}
+
+#[test]
+fn should_run_a_pane_binding_over_a_global_one() {
+    let mut app = three_files();
+    let user = [crate::input::Binding::new(
+        crate::input::KeyContext::Diff,
+        "<C-l>",
+        Action::ToggleHelp,
+    )];
+    app.keymap = crate::input::Keymap::build(';', &user).0;
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL),
+    );
+
+    assert_eq!(app.input_mode, InputMode::Help);
 }

@@ -1215,19 +1215,6 @@ pub struct CollapseOverride {
     pub content_hash: u64,
 }
 
-/// Which prefix key is waiting for its second key.
-#[derive(Debug, Default)]
-pub(crate) struct PendingPrefix {
-    /// `z`, for `zz` / `zt` / `zb`.
-    pub(crate) z: bool,
-    /// `Z`, for `ZZ` / `ZQ`.
-    pub(crate) shift_z: bool,
-    /// `d`, for `dd`.
-    pub(crate) d: bool,
-    /// The leader key.
-    pub(crate) leader: bool,
-}
-
 pub struct App {
     pub theme: Theme,
     pub vcs: Box<dyn VcsBackend>,
@@ -1331,8 +1318,6 @@ pub struct App {
     pub(crate) comment_preferred_column: Option<usize>,
     /// Config `comment_vim`: vim modal editing in the comment box.
     pub comment_vim_enabled: bool,
-    /// Config `q_quits`: restore bare `q` as a quit key in review modes.
-    pub q_quits: bool,
     /// Config `copy_on_quit`: clipboard behavior of `:wq` / `:x` / `ZZ`.
     pub copy_on_quit: CopyOnQuit,
     /// Spaces inserted by Tab while typing in the vim comment box (config
@@ -1545,6 +1530,13 @@ pub struct App {
     pub up_released_since_arm: bool,
     pub cursor_line_highlight: bool,
     pub leader_key: char,
+    /// Config `q_quits`: restore bare `q` as a quit key in review modes.
+    pub q_quits: bool,
+    /// The key bindings in effect.
+    pub keymap: crate::input::Keymap,
+    /// Keys typed so far of an unfinished sequence such as `z` or `<leader>`.
+    /// Cleared in place between sequences, so it allocates once.
+    pub pending_keys: Vec<crate::input::KeyChord>,
     pub scroll_offset: usize,
     /// Where `]`/`[` and `}`/`{` leave their target in the viewport (config
     /// `hunk_jump_align`, default `Visible`).
@@ -1608,8 +1600,6 @@ pub struct App {
     pub update_info: Option<UpdateInfo>,
     /// Accumulated digit count for {N}G jump-to-line
     pub pending_count: Option<usize>,
-    /// The prefix key waiting for its second key.
-    pub(crate) pending_prefix: PendingPrefix,
     /// When the first Ctrl+C of "press twice to exit" arrived.
     pub(crate) pending_ctrl_c: Option<Instant>,
     /// Source line from `--line`, applied once after the first render

@@ -27,16 +27,12 @@ pub enum Action {
     GoToLine,
     /// Jump to the old-side source line given by the count.
     GoToOldLine,
-    Digit(u8),
     NextFile,
     PrevFile,
     NextHunk,
     PrevHunk,
     NextComment,
     PrevComment,
-    PendingZCommand,
-    PendingShiftZCommand,
-    PendingLeaderCommand,
     ScrollLeft(usize),
     ScrollRight(usize),
     ScrollViewDown(usize),
@@ -57,7 +53,6 @@ pub enum Action {
     EditComment,
     /// Edit the comment at cursor with the text cursor at end (vim `A`).
     EditCommentAtEnd,
-    PendingDCommand,
     AddReviewComment,
     /// Delete the comment under the cursor (`dd`).
     DeleteComment,

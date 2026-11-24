@@ -301,6 +301,7 @@ fn main() -> anyhow::Result<()> {
                 }
                 if let Some(leader) = cfg.leader {
                     app.leader_key = leader;
+                    app.keymap = tuicr::input::Keymap::with_defaults(leader);
                 }
                 app.comment_vim_enabled = cfg.comment_vim.unwrap_or(false);
                 app.q_quits = cfg.q_quits.unwrap_or(false);

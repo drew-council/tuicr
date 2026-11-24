@@ -11,9 +11,8 @@ use crate::error::TuicrError;
 use crate::forge::remote_comments::PrCommentsVisibility;
 use crate::forge::submit::SubmitEvent;
 use crate::input::{
-    ACTIONS, Action, ActionSpec, Invocation, map_file_picker_filter_mode,
-    map_file_tree_mode_with_q_quits, map_file_tree_prompt_mode, map_global_key,
-    map_key_to_action_with_q_quits, map_target_filter_mode, map_theme_picker_filter_mode,
+    ACTIONS, Action, ActionSpec, Invocation, KeyChord, KeyContext, Resolution, map_command_key,
+    map_comment_key, map_file_picker_filter_key, map_picker_filter_key, map_prompt_key,
 };
 use crate::model::{ClearScope, LineSide};
 use crate::output::{
@@ -110,60 +109,6 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         return false;
     }
 
-    // Second key of a `z`, `Z`, `d` or `<leader>` sequence.
-    // A key that completes none falls through to normal handling.
-    let prefix = &mut app.pending_prefix;
-    let prefixed = if std::mem::take(&mut prefix.z) {
-        match key.code {
-            KeyCode::Char('z') => Some(Action::CenterCursor),
-            KeyCode::Char('t') => Some(Action::CursorToTop),
-            KeyCode::Char('b') => Some(Action::CursorToBottom),
-            _ => None,
-        }
-    } else if std::mem::take(&mut prefix.shift_z) {
-        match key.code {
-            KeyCode::Char('Z') => Some(Action::ExportQuit),
-            KeyCode::Char('Q') => Some(Action::ForceQuit),
-            _ => None,
-        }
-    } else if std::mem::take(&mut prefix.d) {
-        match (key.code, key.modifiers) {
-            // In the target selector `dd` deletes the saved review under the cursor,
-            // not a comment.
-            (KeyCode::Char('d'), KeyModifiers::NONE)
-                if app.input_mode == InputMode::CommitSelect =>
-            {
-                Some(Action::SessionsTabDelete)
-            }
-            (KeyCode::Char('d'), KeyModifiers::NONE) => Some(Action::DeleteComment),
-            _ => None,
-        }
-    } else if std::mem::take(&mut prefix.leader) {
-        match key.code {
-            KeyCode::Char('e') => Some(Action::ToggleFileList),
-            KeyCode::Char('h') => Some(Action::FocusPaneLeft),
-            KeyCode::Char('l') => Some(Action::FocusPaneRight),
-            KeyCode::Char('k') => Some(Action::FocusPaneUp),
-            KeyCode::Char('j') => Some(Action::FocusPaneDown),
-            KeyCode::Char('c') => Some(Action::AddReviewComment),
-            KeyCode::Char('s') => Some(Action::ToggleCommits),
-            KeyCode::Char('f') => Some(Action::ToggleSingleFileView),
-            KeyCode::Char('n') => Some(Action::ToggleRelativeNumber),
-            KeyCode::Char('p') => Some(Action::FilePicker),
-            _ => None,
-        }
-    } else {
-        None
-    };
-    if let Some(action) = prefixed {
-        // Deleting from the summary changes the list the next queued `dd` reads,
-        // so the summary is drawn first.
-        let redraw_summary =
-            app.input_mode == InputMode::Summary && action == Action::DeleteComment;
-        dispatch_keeping_quit_warning(app, action);
-        return redraw_summary;
-    }
-
     // Vim modal editing: route comment-box keys to the edtui
     // overlay (app-level keys handled inside).
     if app.input_mode == InputMode::Comment && app.comment_vim_enabled {
@@ -173,57 +118,66 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         }
     }
 
-    // Editing the PR-tab filter is a sub-state of CommitSelect;
-    // route through the filter-specific key map so typed
-    // characters update the filter buffer rather than driving
-    // commit-list navigation.
-    let action = map_normal_path_key(app, key);
+    let chord = KeyChord::from(key);
+    let Some(context) = app.key_context() else {
+        // A text input owns the keyboard.
+        return dispatch_key_action(app, map_text_key(app, key));
+    };
 
-    // Handle pending command setters (these work in any mode)
-    match action {
-        Action::PendingZCommand => {
-            app.pending_prefix.z = true;
-            app.pending_count = None;
-            return false;
-        }
-        Action::PendingShiftZCommand => {
-            app.pending_prefix.shift_z = true;
-            app.pending_count = None;
-            return false;
-        }
-        Action::PendingDCommand => {
-            app.pending_prefix.d = true;
-            app.pending_count = None;
-            return false;
-        }
-        Action::PendingLeaderCommand => {
-            app.pending_prefix.leader = true;
-            app.pending_count = None;
-            return false;
-        }
-        _ => {}
+    app.pending_keys.push(chord);
+    let extends_sequence =
+        app.pending_keys.len() > 1 && app.keymap.binds(context, &app.pending_keys);
+    app.pending_keys.pop();
+
+    // Vim-style `{N}` count, in review panes only:
+    // digits accumulate in `pending_count` until a key runs an action,
+    // which applies the count by its `CountMode`.
+    // A digit that is bound, or that continues a sequence, is a key.
+    if context.takes_count()
+        && !extends_sequence
+        && let KeyCode::Char(c @ '0'..='9') = key.code
+        && key.modifiers == KeyModifiers::NONE
+        && !app.keymap.binds(context, &[chord])
+    {
+        app.pending_keys.clear();
+        let n = app.pending_count.unwrap_or(0);
+        let digit = c as usize - '0' as usize;
+        app.pending_count = Some(n.saturating_mul(10).saturating_add(digit).min(999_999));
+        return false;
     }
 
-    // Vim-style {count}{motion} (Normal mode only): digits accumulate
-    // into `pending_count`, and the next action consumes it.
-    let mut count = None;
-    if app.input_mode == InputMode::Normal {
-        if let Action::Digit(d) = action {
-            let n = app.pending_count.unwrap_or(0);
-            app.pending_count =
-                Some((n.saturating_mul(10).saturating_add(d as usize)).min(999_999));
+    let action = match app.keymap.resolve(context, &mut app.pending_keys, chord) {
+        Resolution::Run(action) if extends_sequence => {
+            // Deleting from the summary changes the list the next queued `dd` reads,
+            // so the summary is drawn first.
+            let redraw_summary =
+                app.input_mode == InputMode::Summary && action == Action::DeleteComment;
+            dispatch_keeping_quit_warning(app, action);
+            return redraw_summary;
+        }
+        Resolution::Run(action) => quit_key_action(app, action),
+        Resolution::Pending => {
+            app.pending_count = None;
             return false;
         }
-        count = app.pending_count.take();
-    }
+        Resolution::Unbound => Action::None,
+    };
+    dispatch_key_action(app, action)
+}
 
+/// Dispatch the action a single key resolved to, with any pending count.
+/// Returns `true` when the frame must be drawn before the next queued key is read.
+fn dispatch_key_action(app: &mut App, action: Action) -> bool {
+    // Only review panes take counts; elsewhere a typed count waits.
+    let count = if app.input_mode == InputMode::Normal {
+        app.pending_count.take()
+    } else {
+        None
+    };
     let previous_mode = app.input_mode;
     dispatch_action(app, Invocation::new(action, count));
-    if previous_mode != InputMode::Summary && app.input_mode == InputMode::Summary {
-        // Summary identities are populated by rendering before queued input.
-        return true;
-    }
-    false
+    // Summary identities are populated by rendering before queued input.
+    previous_mode != InputMode::Summary && app.input_mode == InputMode::Summary
 }
 
 /// Handle a comment-mode key while vim is active: app-level keys keep their
@@ -510,36 +464,54 @@ fn open_target_selector(app: &mut App, tab: TargetTab) {
     }
 }
 
-/// Handle a key that means the same thing in every input mode (see
-/// `map_global_key`). Returns `true` when the key was consumed, so the caller
-/// skips the per-mode maps.
-pub fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
-    match map_global_key(key) {
-        Action::None => false,
-        action => {
-            dispatch_action(app, action);
-            true
-        }
+/// `q_quits` turns the key that only hints back into a quit key.
+fn quit_key_action(app: &App, action: Action) -> Action {
+    if action == Action::QuitHint && app.q_quits {
+        Action::ConfirmQuit
+    } else {
+        action
     }
 }
 
-/// Map a key press to an `Action` for the current mode. An open text prompt
-/// (PR filter, file-tree prompt, theme/file picker filter) owns the keys first,
-/// whatever panel has focus; the file tree has its own map otherwise.
+/// The action one key runs on its own in the current state.
+/// An open text input owns the key, then the keymap context does.
+/// A key that only starts a sequence, or only counts, maps to `Action::None`.
 pub fn map_normal_path_key(app: &App, key: KeyEvent) -> Action {
-    if app.input_mode == InputMode::CommitSelect && app.pr_filter_editing() {
-        map_target_filter_mode(key)
-    } else if app.input_mode == InputMode::Normal && app.file_tree_prompt_editing() {
-        map_file_tree_prompt_mode(key)
-    } else if app.input_mode == InputMode::ThemePicker && app.theme_picker_filtering() {
-        map_theme_picker_filter_mode(key)
-    } else if app.input_mode == InputMode::FilePicker && app.file_picker_filtering() {
-        map_file_picker_filter_mode(key)
-    } else if app.input_mode == InputMode::Normal && app.focused_panel == FocusedPanel::FileList {
-        map_file_tree_mode_with_q_quits(key, app.leader_key, app.q_quits)
-    } else {
-        map_key_to_action_with_q_quits(key, app.input_mode, app.leader_key, app.q_quits)
+    let Some(context) = app.key_context() else {
+        return map_text_key(app, key);
+    };
+    let action = app.keymap.action(context, &[KeyChord::from(key)]);
+    quit_key_action(app, action.unwrap_or(Action::None))
+}
+
+/// The fixed editor map for the text input that owns the keyboard.
+fn map_text_key(app: &App, key: KeyEvent) -> Action {
+    match app.input_mode {
+        InputMode::Command => map_command_key(key),
+        InputMode::Comment => map_comment_key(key),
+        InputMode::FilePicker => map_file_picker_filter_key(key),
+        InputMode::ThemePicker => map_picker_filter_key(key),
+        _ => map_prompt_key(key),
     }
+}
+
+/// Run a `global` binding (`Ctrl-l`).
+/// It is checked ahead of key sequences, the vim editor and the text inputs,
+/// so it never reaches a text buffer and never breaks a pending sequence.
+/// Returns `true` when the key was consumed.
+pub fn handle_global_key(app: &mut App, key: KeyEvent) -> bool {
+    let chord = KeyChord::from(key);
+    let Some(action) = app.keymap.action(KeyContext::Global, &[chord]) else {
+        return false;
+    };
+    // A context may bind the key to something else.
+    if let Some(context) = app.key_context()
+        && app.keymap.action(context, &[chord]).as_ref() != Some(&action)
+    {
+        return false;
+    }
+    dispatch_action(app, action);
+    true
 }
 
 pub fn handle_mouse_event(app: &mut App, event: MouseEvent) {
@@ -1969,6 +1941,7 @@ pub fn handle_file_picker_action(app: &mut App, action: Action) {
                 .filter(|c| !matches!(c, '\n' | '\r'))
                 .for_each(|c| app.file_picker_filter_insert_char(c)),
             Action::DeleteChar => app.file_picker_filter_delete_char(),
+            Action::DeleteWord => app.file_picker_filter_delete_word(),
             Action::ClearLine => app.file_picker_filter_clear_line(),
             Action::CursorDown(n) => app.move_file_picker_selection(n as isize),
             Action::CursorUp(n) => app.move_file_picker_selection(-(n as isize)),
@@ -2017,6 +1990,7 @@ fn handle_theme_picker_filter_action(app: &mut App, action: Action) {
             .filter(|c| !matches!(c, '\n' | '\r'))
             .for_each(|c| app.theme_picker_filter_insert_char(c)),
         Action::DeleteChar => app.theme_picker_filter_delete_char(),
+        Action::DeleteWord => app.theme_picker_filter_delete_word(),
         Action::ClearLine => app.theme_picker_filter_clear_line(),
         Action::SubmitInput => app.commit_theme_picker_filter(),
         Action::ExitMode => app.cancel_theme_picker_filter(),
